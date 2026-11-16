@@ -1,0 +1,27 @@
+{
+  "name": "@nexo/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=../../.env src/server.ts",
+    "start": "tsx --env-file-if-exists=../../.env src/server.ts",
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fastify/cors": "^10.0.2",
+    "@fastify/jwt": "^10.2.5",
+    "@fastify/multipart": "^9.0.3",
+    "@fastify/rate-limit": "^10.2.1",
+    "@nexo/database": "*",
+    "fastify": "^5.3.2",
+    "fastify-raw-body": "^5.0.0",
+    "openai": "^6.0.0",
+    "pdf-parse": "1.1.1",
+    "zod": "^3.24.3"
+  },
+  "devDependencies": {
+    "@types/pdf-parse": "^1.1.5"
+  }
+}

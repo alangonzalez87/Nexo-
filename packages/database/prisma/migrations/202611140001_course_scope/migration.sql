@@ -1,0 +1,1 @@
+ALTER TABLE "Product" ADD COLUMN "agentEnabled" BOOLEAN NOT NULL DEFAULT true;

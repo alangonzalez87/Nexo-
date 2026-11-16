@@ -1,0 +1,1 @@
+ALTER TABLE "Workspace" ADD COLUMN "approvalPhone" TEXT NOT NULL DEFAULT '';

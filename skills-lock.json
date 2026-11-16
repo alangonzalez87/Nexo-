@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "skills": {
+    "crysk": {
+      "source": "cryskai/crysk",
+      "sourceType": "github",
+      "skillPath": "skills/crysk/SKILL.md",
+      "computedHash": "37a03ac7201852c649538fe2ba91f3d98aa68b9c9611b9ef9f8a1365159fd11b"
+    },
+    "crysk-ci-setup": {
+      "source": "cryskai/crysk",
+      "sourceType": "github",
+      "skillPath": "skills/crysk-ci-setup/SKILL.md",
+      "computedHash": "0c8ad8cda38373bbb084d484260152c391d046e359a8161c09d9131633a20a81"
+    },
+    "crysk-loop": {
+      "source": "cryskai/crysk",
+      "sourceType": "github",
+      "skillPath": "skills/crysk-loop/SKILL.md",
+      "computedHash": "2a04b7369ce1226013c652258da2a79456809ac1146b6c4a45ea69a062f27add"
+    },
+    "crysk-pr": {
+      "source": "cryskai/crysk",
+      "sourceType": "github",
+      "skillPath": "skills/crysk-pr/SKILL.md",
+      "computedHash": "034f8c51c2974031f5b7a8c714527a1d7dce1854580fefb21d63687ba030721a"
+    }
+  }
+}

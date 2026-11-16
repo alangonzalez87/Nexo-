@@ -1,0 +1,2 @@
+ALTER TABLE "Product" ADD COLUMN "firstMessage" TEXT NOT NULL DEFAULT '';
+ALTER TABLE "Product" ADD COLUMN "followUpMessages" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];

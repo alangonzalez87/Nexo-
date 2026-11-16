@@ -1,0 +1,126 @@
+.login-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  min-height: 100vh;
+  background: white;
+}
+.login-story {
+  background: #163d32;
+  color: #e4eddd;
+  padding: 45px 60px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 100vh;
+  position: relative;
+  overflow: hidden;
+}
+.login-story:after {
+  content: "";
+  width: 500px;
+  height: 500px;
+  border: 1px solid #79a58122;
+  position: absolute;
+  right: -300px;
+  bottom: -150px;
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 60px #79a58108,
+    0 0 0 120px #79a58105;
+  pointer-events: none;
+}
+.login-story .brand {
+  color: #ecf1e6;
+  padding: 0;
+}
+.login-story .brand-icon {
+  color: #8eaf78;
+  background: #ffffff0b;
+}
+.login-story h1 {
+  font-size: clamp(32px, 4vw, 60px);
+  color: #e4eddd;
+  line-height: 1.12;
+  font-weight: 700;
+  letter-spacing: -2px;
+  margin: 22px 0;
+}
+.login-story h1 span {
+  color: #a6c990;
+}
+.login-story p {
+  color: #9fb59e;
+  font-size: 13px;
+}
+.login-note {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 11px;
+  color: #b3c7ab;
+  margin-top: 45px;
+}
+.login-story > small {
+  font-size: 8px;
+  letter-spacing: 1.5px;
+  color: #77927c;
+}
+.login-form {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+}
+.login-form form {
+  max-width: 350px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.login-form h2 {
+  font-size: 29px;
+  letter-spacing: -1px;
+}
+.login-form p {
+  font-size: 12px;
+  margin-top: -14px;
+  margin-bottom: 12px;
+}
+.login-form .eyebrow {
+  margin: 0;
+  font-size: 9px;
+}
+.login-form label {
+  font-size: 11px;
+  gap: 10px;
+}
+.login-form input {
+  font-size: 12px;
+  padding: 13px;
+}
+.login-form .primary {
+  margin-top: 5px;
+  padding: 13px 17px;
+  justify-content: space-between;
+}
+.login-help {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  line-height: 1.6;
+  font-size: 10px;
+  color: #9aa48e;
+  padding-top: 10px;
+}
+.login-help svg {
+  flex-shrink: 0;
+}
+.spin {
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

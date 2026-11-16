@@ -1,0 +1,41 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: nexo
+      POSTGRES_USER: nexo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nexo_local}
+    ports: ["127.0.0.1:5432:5432"]
+    volumes: ["postgres_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexo -d nexo"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  api:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://nexo:${POSTGRES_PASSWORD:-nexo_local}@postgres:5432/nexo
+      HOST: 0.0.0.0
+      STORAGE_DIR: /app/.data/private
+    ports: ["127.0.0.1:3001:3001"]
+    volumes: ["private_files:/app/.data/private"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    command:
+      [
+        "sh",
+        "-c",
+        "npm run db:migrate && npm run db:seed && npm run start -w @nexo/api",
+      ]
+  web:
+    build: .
+    ports: ["127.0.0.1:5173:5173"]
+    environment:
+      API_PROXY: http://api:3001
+    command: ["npm", "run", "dev", "-w", "@nexo/web", "--", "--host", "0.0.0.0"]
+    depends_on: [api]
+volumes:
+  postgres_data:
+  private_files:

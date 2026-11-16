@@ -1,0 +1,66 @@
+.integrations > .card {
+  margin-top: 24px;
+}
+.integration-session {
+  padding: 16px 0;
+  border-bottom: 1px solid #e3e9e5;
+  overflow-wrap: anywhere;
+}
+.settings-details {
+  margin: 16px 0;
+  padding: 13px 16px;
+  border: 1px solid #e0e9e0;
+  border-radius: 9px;
+  background: #fafcf9;
+}
+.settings-details summary {
+  cursor: pointer;
+  color: #254d37;
+  font-size: 12px;
+  font-weight: 700;
+}
+.settings-details[open] summary {
+  margin-bottom: 16px;
+}
+.settings-details .muted {
+  line-height: 1.5;
+}
+.session-tools {
+  margin-bottom: 0;
+  padding: 10px 12px;
+  border: 0;
+  background: transparent;
+}
+.integration-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.integration-qr {
+  width: 240px;
+  max-width: 100%;
+  margin-top: 16px;
+}
+.integration-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.integration-check input {
+  width: auto;
+}
+.integration-events {
+  max-height: 380px;
+  overflow: auto;
+}
+.inbox-channels {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.conversation-item small {
+  display: block;
+  color: var(--muted, #63746d);
+  margin-top: 3px;
+}

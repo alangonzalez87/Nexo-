@@ -1,0 +1,4 @@
+ALTER TABLE "Product" ADD COLUMN "firstImageId" TEXT;
+ALTER TABLE "Product" ADD COLUMN "followUpImageIds" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];
+ALTER TABLE "Pack" ADD COLUMN "imageId" TEXT;
+ALTER TABLE "ReplyRule" ADD COLUMN "imageId" TEXT;

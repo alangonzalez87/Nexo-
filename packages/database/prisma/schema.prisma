@@ -1,0 +1,261 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+model User {
+  id String @id @default(cuid())
+  email String @unique
+  passwordHash String
+  memberships Membership[]
+}
+model Membership {
+  userId String
+  workspaceId String
+  role String @default("ADMIN")
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  @@id([userId, workspaceId])
+}
+model Workspace {
+  id String @id @default(cuid())
+  name String
+  paymentAlias String @default("")
+  paymentInstructions String @default("")
+  approvalPhone String @default("")
+  version Int @default(0)
+  memberships Membership[]
+  products Product[]
+  connections Connection[]
+  campaigns Campaign[]
+  conversations Conversation[]
+  assets Asset[]
+  notifications Notification[]
+  events IntegrationEvent[]
+  integrationConfig IntegrationConfig?
+  webhookInbox WebhookInbox[]
+}
+model IntegrationConfig {
+  workspaceId String @id
+  encrypted String
+  updatedAt DateTime @updatedAt
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+model WebhookInbox {
+  id String @id
+  workspaceId String
+  connectionId String
+  payload Json
+  status String @default("PENDING")
+  attempts Int @default(0)
+  nextAttemptAt DateTime @default(now())
+  lastError String?
+  createdAt DateTime @default(now())
+  processedAt DateTime?
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  @@index([status, nextAttemptAt])
+  @@index([workspaceId, createdAt])
+}
+model Product {
+  id String @id @default(cuid())
+  workspaceId String
+  name String
+  priceCents Int
+  currency String @default("ARS")
+  description String @default("")
+  benefits String @default("")
+  firstMessage String @default("")
+  firstImageId String?
+  followUpMessages String[] @default([])
+  followUpImageIds String[] @default([])
+  notifyApprovalByWhatsApp Boolean @default(true)
+  receiptMode String @default("MANUAL")
+  remarketingEnabled Boolean @default(false)
+  remarketingDelayHours Int @default(6)
+  remarketingMessage String @default("")
+  hook String @default("")
+  cta String @default("")
+  objections String @default("")
+  mode String @default("STRICT")
+  active Boolean @default(true)
+  agentEnabled Boolean @default(true)
+  deliveryAssetId String?
+  createdAt DateTime @default(now())
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  rules ReplyRule[]
+  packs Pack[]
+  documents KnowledgeDocument[]
+  campaigns Campaign[]
+  conversations Conversation[]
+  @@unique([workspaceId, id])
+}
+model Pack {
+  id String @id @default(cuid())
+  workspaceId String
+  productId String
+  number Int
+  name String
+  priceCents Int
+  summary String @default("")
+  imageId String?
+  deliveryMessage String
+  product Product @relation(fields: [workspaceId, productId], references: [workspaceId, id], onDelete: Cascade)
+  @@unique([workspaceId, productId, number])
+}
+model ReplyRule {
+  id String @id @default(cuid())
+  workspaceId String
+  productId String
+  question String
+  answer String
+  imageId String?
+  mandatory Boolean @default(true)
+  product Product @relation(fields: [workspaceId, productId], references: [workspaceId, id], onDelete: Cascade)
+  @@index([workspaceId, productId])
+}
+model Asset {
+  id String @id @default(cuid())
+  workspaceId String
+  originalName String
+  mime String
+  path String
+  size Int
+  purpose String
+  createdAt DateTime @default(now())
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  @@unique([workspaceId, id])
+}
+model KnowledgeDocument {
+  id String @id @default(cuid())
+  workspaceId String
+  productId String
+  assetId String
+  name String
+  text String
+  createdAt DateTime @default(now())
+  product Product @relation(fields: [workspaceId, productId], references: [workspaceId, id], onDelete: Cascade)
+  @@index([workspaceId, productId])
+}
+model Connection {
+  id String @id @default(cuid())
+  workspaceId String
+  name String
+  provider String @default("MOCK")
+  sessionId String @unique
+  status String @default("DISCONNECTED")
+  createdAt DateTime @default(now())
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  conversations Conversation[]
+  @@unique([workspaceId, id])
+}
+model Campaign {
+  id String @id @default(cuid())
+  workspaceId String
+  productId String
+  name String
+  code String
+  adId String?
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [workspaceId, productId], references: [workspaceId, id])
+  @@unique([workspaceId, code])
+}
+model Conversation {
+  id String @id @default(cuid())
+  workspaceId String
+  connectionId String
+  contact String
+  contactName String?
+  contactPhone String?
+  productId String?
+  state String @default("DISCOVERY")
+  paused Boolean @default(false)
+  humanControlled Boolean @default(false)
+  marketingOptOutAt DateTime?
+  quotedPriceCents Int?
+  quotedCurrency String?
+  selectedPackNumber Int?
+  selectedPackName String?
+  selectedPackDeliveryMessage String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  connection Connection @relation(fields: [workspaceId, connectionId], references: [workspaceId, id])
+  product Product? @relation(fields: [workspaceId, productId], references: [workspaceId, id])
+  messages Message[]
+  payments Payment[]
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, connectionId, contact])
+}
+model Message {
+  id String @id @default(cuid())
+  workspaceId String
+  conversationId String
+  externalId String @unique
+  direction String
+  text String
+  assetId String?
+  status String @default("RECEIVED")
+  providerMessageId String?
+  origin String @default("AUTO")
+  createdAt DateTime @default(now())
+  conversation Conversation @relation(fields: [workspaceId, conversationId], references: [workspaceId, id], onDelete: Cascade)
+  @@index([workspaceId, status])
+}
+model Payment {
+  id String @id @default(cuid())
+  workspaceId String
+  conversationId String
+  assetId String
+  amountCents Int?
+  currency String?
+  packNumber Int?
+  packName String?
+  deliveryMessage String?
+  receiptMode String @default("MANUAL")
+  receiptCheckStatus String @default("NOT_RUN")
+  receiptCheckSummary String?
+  receiptCheckStartedAt DateTime?
+  receiptReference String?
+  receiptFingerprint String?
+  status String @default("PENDING")
+  deliveryMode String?
+  reviewedBy String?
+  reviewedAt DateTime?
+  reason String?
+  createdAt DateTime @default(now())
+  conversation Conversation @relation(fields: [workspaceId, conversationId], references: [workspaceId, id])
+  delivery Delivery?
+  @@unique([workspaceId, assetId])
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, receiptReference])
+  @@unique([workspaceId, receiptFingerprint])
+}
+model Delivery {
+  id String @id @default(cuid())
+  workspaceId String
+  paymentId String @unique
+  assetId String
+  tokenHash String @unique
+  expiresAt DateTime
+  payment Payment @relation(fields: [workspaceId, paymentId], references: [workspaceId, id])
+  @@unique([workspaceId, paymentId])
+}
+model Notification {
+  id String @id @default(cuid())
+  workspaceId String
+  text String
+  read Boolean @default(false)
+  createdAt DateTime @default(now())
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+model IntegrationEvent {
+  id String @id @default(cuid())
+  workspaceId String
+  type String
+  payload Json
+  createdAt DateTime @default(now())
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  @@index([workspaceId, createdAt])
+}
