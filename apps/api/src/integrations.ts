@@ -51,7 +51,7 @@ type Saved = Pick<
   | "openaiModel"
   | "publicUrl"
   | "automaticOwnMessages"
-> & { managed?: boolean };
+> & { managed?: boolean; managedSessionId?: string };
 const savedKeys = new Set<string>([
   "openwaEnabled",
   "openwaUrl",
@@ -62,6 +62,7 @@ const savedKeys = new Set<string>([
   "openaiModel",
   "publicUrl",
   "managed",
+  "managedSessionId",
   "automaticOwnMessages",
 ] satisfies (keyof Saved)[]);
 export class IntegrationSettings {
@@ -154,6 +155,7 @@ export class IntegrationSettings {
       hasWebhookSecret: !!c.webhookSecret,
       automaticOwnMessages: c.automaticOwnMessages || [],
       managed: !!(c as Config & { managed?: boolean }).managed,
+      managedSessionId: (c as Saved).managedSessionId,
       managedProvisionAvailable:
         !!this.defaults.managedOpenwaAdminKey &&
         (!this.defaults.forceSimulation || !!this.defaults.openwaSetupMode),
@@ -190,10 +192,11 @@ export class IntegrationSettings {
         data.webhookSecret ||
         old.webhookSecret ||
         randomBytes(32).toString("hex"),
-      managed:
-        !!(old as Config & { managed?: boolean }).managed &&
-        !data.openwaKey &&
-        !data.clearOpenwaKey,
+      managed: !!(old as Saved).managed && !data.openwaKey && !data.clearOpenwaKey,
+      managedSessionId:
+        (old as Saved).managed && !data.openwaKey && !data.clearOpenwaKey
+          ? (old as Saved).managedSessionId
+          : undefined,
     };
     if (saved.openwaEnabled && !saved.openwaKey)
       throw new HttpError(400, "Falta la API key de OpenWA.");
@@ -207,7 +210,7 @@ export class IntegrationSettings {
     });
     return this.view(workspaceId);
   }
-  async saveManaged(workspaceId: string, key: string) {
+  async saveManaged(workspaceId: string, key: string, sessionId?: string) {
     const old = await this.resolve(workspaceId);
     const saved: Saved = {
       openwaEnabled: true,
@@ -220,6 +223,7 @@ export class IntegrationSettings {
       publicUrl: old.publicUrl,
       automaticOwnMessages: old.automaticOwnMessages || [],
       managed: true,
+      managedSessionId: sessionId,
     };
     await this.db.integrationConfig.upsert({
       where: { workspaceId },

@@ -36,16 +36,31 @@ export class ManagedOpenWA {
     const connections = await this.db.connection.findMany({
       where: { workspaceId, provider: "OPENWA" },
     });
+    const managed =
+      !!(runtime as Config & { managed?: boolean }).managed;
+    const replacingDisabledLegacyConfig =
+      !!this.config.openwaSetupMode &&
+      !runtime.openwaEnabled &&
+      !managed;
     if (runtime.openwaEnabled && runtime.openwaKey) {
       if (connections.length) {
-        if ((runtime as Config & { managed?: boolean }).managed)
-          await new OpenWAAdapter(runtime).registerWebhook(
-            connections[0],
-            `${runtime.publicUrl}/api/webhooks/openwa/${workspaceId}`,
-          );
-        return;
+        if (managed) {
+          const managedSessionId = (
+            runtime as Config & { managedSessionId?: string }
+          ).managedSessionId;
+          const connection =
+            connections.find((item) => item.sessionId === managedSessionId) ||
+            (connections.length === 1 ? connections[0] : undefined);
+          if (connection) {
+            await new OpenWAAdapter(runtime).registerWebhook(
+              connection,
+              `${(runtime.openwaWebhookBaseUrl || runtime.publicUrl).replace(/\/$/, "")}/api/webhooks/openwa/${workspaceId}`,
+            );
+            return;
+          }
+        }
       }
-      if (!(runtime as Config & { managed?: boolean }).managed)
+      if (!managed)
         throw new HttpError(
           409,
           "Ya hay una configuración de WhatsApp: revisala antes de continuar.",
@@ -53,8 +68,9 @@ export class ManagedOpenWA {
     }
     if (
       (runtime.openwaKey &&
-        !(runtime as Config & { managed?: boolean }).managed) ||
-      connections.length
+        !managed &&
+        !replacingDisabledLegacyConfig) ||
+      (connections.length && !replacingDisabledLegacyConfig)
     )
       throw new HttpError(
         409,
@@ -90,14 +106,24 @@ export class ManagedOpenWA {
         409,
         "Hay sesiones duplicadas que requieren revisión del administrador.",
       );
+    const linkedSessions = sessions.filter((session: any) =>
+      connections.some((connection) => connection.sessionId === session.id),
+    );
+    if (!matching.length && linkedSessions.length > 1)
+      throw new HttpError(
+        409,
+        "Hay varias sesiones OpenWA vinculadas a este negocio; requieren revisión antes de elegir una.",
+      );
     const session =
-      matching[0] || (await request("/sessions", "POST", { name }));
+      matching[0] ||
+      linkedSessions[0] ||
+      (await request("/sessions", "POST", { name }));
     if (
       typeof session.id !== "string" ||
       !/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(session.id)
     )
       throw new HttpError(502, "OpenWA devolvió una sesión inválida.");
-    if (!runtime.openwaKey) {
+    if (!runtime.openwaKey || replacingDisabledLegacyConfig) {
       const key = await request("/auth/api-keys", "POST", {
         name: `Nexo ${workspaceId}`,
         role: "operator",
@@ -106,7 +132,7 @@ export class ManagedOpenWA {
       if (typeof key.apiKey !== "string" || typeof key.id !== "string")
         throw new HttpError(502, "OpenWA no devolvió una clave válida.");
       try {
-        await this.settings.saveManaged(workspaceId, key.apiKey);
+        await this.settings.saveManaged(workspaceId, key.apiKey, session.id);
       } catch (error) {
         try {
           await request(
@@ -119,7 +145,9 @@ export class ManagedOpenWA {
         throw error;
       }
     }
-    await this.db.connection.create({
+    const connection =
+      connections.find((item) => item.sessionId === session.id) ||
+      (await this.db.connection.create({
       data: {
         workspaceId,
         name: "WhatsApp del negocio",
@@ -127,11 +155,8 @@ export class ManagedOpenWA {
         sessionId: session.id,
         status: String(session.status || "created").toUpperCase(),
       },
-    });
+      }));
     const saved = await this.settings.resolve(workspaceId);
-    const connection = await this.db.connection.findUniqueOrThrow({
-      where: { sessionId: session.id },
-    });
     await new OpenWAAdapter(saved).registerWebhook(
       connection,
       `${(saved.openwaWebhookBaseUrl || saved.publicUrl).replace(/\/$/, "")}/api/webhooks/openwa/${workspaceId}`,

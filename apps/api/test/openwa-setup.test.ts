@@ -110,7 +110,7 @@ after(async () => {
   await new Promise<void>((resolve) => gateway.close(() => resolve()));
 });
 
-test("OpenWA setup stays admin-only, provisions QR and registers status webhooks only", async () => {
+test("OpenWA setup replaces disabled legacy credentials, preserves old rows and provisions QR", async () => {
   const unauthenticated = await ctx.app.inject({
     method: "POST",
     url: "/api/connections/managed",
@@ -130,15 +130,50 @@ test("OpenWA setup stays admin-only, provisions QR and registers status webhooks
   });
   assert.equal(deniedProvision.statusCode, 403);
 
+  await ctx.integrations.save(workspaceId, {
+    openwaEnabled: false,
+    openwaUrl: gatewayUrl,
+    aiProvider: "rules",
+    openaiModel: "gpt-4.1-mini",
+    publicUrl: "https://nexo.example.test",
+    openwaKey: "legacy-local-key",
+  });
+  const legacyRows = await db.connection.createMany({
+    data: ["legacy-session-one", "legacy-session-two"].map((sessionId) => ({
+      workspaceId,
+      name: `Imported ${sessionId}`,
+      provider: "OPENWA",
+      sessionId,
+      status: "DISCONNECTED",
+    })),
+  });
+  assert.equal(legacyRows.count, 2);
+
   const created = await ctx.app.inject({
     method: "POST",
     url: "/api/connections/managed",
     headers: adminHeaders,
   });
   assert.equal(created.statusCode, 200, created.body);
+  const repaired = await ctx.integrations.view(workspaceId);
+  assert.equal(repaired.openwaEnabled, true);
+  assert.equal(repaired.hasOpenwaKey, true);
+  assert.equal(repaired.managed, true);
+  assert.equal(typeof repaired.managedSessionId, "string");
+  const remainingLegacy = await db.connection.findMany({
+    where: { workspaceId, sessionId: { startsWith: "legacy-session-" } },
+    orderBy: { sessionId: "asc" },
+  });
+  assert.equal(remainingLegacy.length, 2);
+  assert.deepEqual(
+    remainingLegacy.map((row) => row.status),
+    ["DISCONNECTED", "DISCONNECTED"],
+  );
   assert.deepEqual(subscriptions[0].events, ["session.status", "session.disconnected"]);
   assert.equal(subscriptions[0].url, `http://nexo.railway.internal:8080/api/webhooks/openwa/${workspaceId}`);
-  const connection = await db.connection.findFirstOrThrow({ where: { workspaceId, provider: "OPENWA" } });
+  const connection = await db.connection.findFirstOrThrow({
+    where: { workspaceId, name: "WhatsApp del negocio" },
+  });
 
   const qr = await ctx.app.inject({
     method: "POST",

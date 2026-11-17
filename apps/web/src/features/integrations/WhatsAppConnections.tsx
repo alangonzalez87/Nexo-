@@ -24,9 +24,11 @@ export function WhatsAppConnections(
               });
             }}
           >
-            <h2>Agregar otro WhatsApp</h2>
+            <h2>{config.openwaSetupMode ? "Preparar WhatsApp" : "Agregar otro WhatsApp"}</h2>
             <p className="muted">
-              Se mostrará un QR para el nuevo número.
+              {config.openwaSetupMode
+                ? "Se conectará una sesión nueva de Railway sin activar respuestas automáticas."
+                : "Se mostrará un QR para el nuevo número."}
             </p>
             {!config.openwaEnabled && config.managedProvisionAvailable && (
                 <button
@@ -49,7 +51,7 @@ export function WhatsAppConnections(
             {!config.openwaEnabled && !config.managedProvisionAvailable && (
               <p className="muted">Activá WhatsApp real en “Configuración técnica” para agregar un número.</p>
             )}
-            {config.openwaEnabled && (
+            {config.openwaEnabled && !config.openwaSetupMode && (
               <>
             <label>
               Nombre para identificarlo
@@ -75,9 +77,18 @@ export function WhatsAppConnections(
             {!connections.length && (
               <p className="muted">No hay ningún WhatsApp configurado.</p>
             )}
-            {connections.map((c) => (
+            {connections.map((c) => {
+              const usableInSetup =
+                !config.openwaSetupMode ||
+                (config.managed && c.sessionId === config.managedSessionId);
+              return (
               <div className="integration-session" key={c.id}>
                 <h3>{c.name}</h3>
+                {config.openwaSetupMode && !usableInSetup && (
+                  <p className="muted">
+                    Esta conexión importada se conserva, pero no pertenece a la sesión de OpenWA de Railway.
+                  </p>
+                )}
                 <p>
                   <span className={`badge connection-status ${(statusLoaded ? liveStatuses[c.id]?.status || "UNAVAILABLE" : "CHECKING").toLowerCase()}`}>
                     {connectionStatusName(statusLoaded ? liveStatuses[c.id]?.status || "UNAVAILABLE" : "CHECKING")}
@@ -86,6 +97,7 @@ export function WhatsAppConnections(
                 </p>
                 <p className="muted">{connectionStatusDetail(statusLoaded ? liveStatuses[c.id]?.status || "UNAVAILABLE" : "CHECKING")}</p>
                 <div className="integration-actions">
+                  {usableInSetup && (
                   <button
                     className="secondary"
                     disabled={busy}
@@ -98,7 +110,8 @@ export function WhatsAppConnections(
                   >
                     Actualizar estado
                   </button>
-                  {!isConnectionActive(statusLoaded ? liveStatuses[c.id]?.status || "UNAVAILABLE" : "CHECKING") && (
+                  )}
+                  {usableInSetup && !isConnectionActive(statusLoaded ? liveStatuses[c.id]?.status || "UNAVAILABLE" : "CHECKING") && (
                     <button
                       className="primary"
                       disabled={busy}
@@ -122,7 +135,7 @@ export function WhatsAppConnections(
                     </button>
                   )}
                 </div>
-                <details className="settings-details session-tools">
+                {usableInSetup && <details className="settings-details session-tools">
                   <summary>Solucionar problemas</summary>
                   <button
                     className="secondary"
@@ -135,6 +148,7 @@ export function WhatsAppConnections(
                     Reparar recepción
                   </button>
                 </details>
+                )}
                 {checks[c.id]?.qr && liveStatuses[c.id]?.status === "QR_READY" && (
                   <>
                     <img
@@ -146,7 +160,8 @@ export function WhatsAppConnections(
                   </>
                 )}
               </div>
-            ))}
+              );
+            })}
           </section>
         </div>
   );
