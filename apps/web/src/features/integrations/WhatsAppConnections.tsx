@@ -135,19 +135,20 @@ export function WhatsAppConnections(
                     </button>
                   )}
                 </div>
-                {usableInSetup && <details className="settings-details session-tools">
-                  <summary>Solucionar problemas</summary>
-                  <button
-                    className="secondary"
-                    disabled={busy}
-                    onClick={() => run(async () => {
-                      await api(`/connections/${c.id}/webhook`, "POST");
-                      setNotice("Recepción reparada.");
-                    })}
-                  >
-                    Reparar recepción
-                  </button>
-                </details>
+                {usableInSetup && (
+                  <details className="settings-details session-tools">
+                    <summary>Solucionar problemas</summary>
+                    <button
+                      className="secondary"
+                      disabled={busy}
+                      onClick={() => run(async () => {
+                        await api(`/connections/${c.id}/webhook`, "POST");
+                        setNotice("Recepción reparada.");
+                      })}
+                    >
+                      Reparar recepción
+                    </button>
+                  </details>
                 )}
                 {checks[c.id]?.qr && liveStatuses[c.id]?.status === "QR_READY" && (
                   <>
