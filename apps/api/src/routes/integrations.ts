@@ -35,7 +35,7 @@ export function registerIntegrationRoutes(
     });
   });
   app.get("/api/integrations/config", async (req, reply) => {
-    await setupAdmin(req);
+    await setupAdmin?.(req);
     reply.header("Cache-Control", "no-store");
     return integrations.view(await scope(req, true));
   });

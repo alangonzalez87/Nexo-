@@ -11,7 +11,7 @@ export function registerWebhookRoutes(
   { db, integrations, webhooks, scope, setupAdmin }: Pick<RouteContext, "db" | "integrations" | "webhooks" | "scope" | "setupAdmin">,
 ) {
   app.post("/api/connections/:id/webhook", async (req) => {
-    await setupAdmin(req);
+    await setupAdmin?.(req);
     const workspaceId = await scope(req, true),
       runtime = await integrations.resolve(workspaceId);
     const connection = await db.connection.findFirst({

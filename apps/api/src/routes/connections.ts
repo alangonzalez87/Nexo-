@@ -19,7 +19,7 @@ export function registerConnectionRoutes(
     }),
   );
   app.get("/api/connections/live-status", async (req) => {
-    await setupAdmin(req);
+    await setupAdmin?.(req);
     const workspaceId = await scope(req);
     const connections = await db.connection.findMany({
       where: { workspaceId, provider: "OPENWA" },
@@ -47,7 +47,7 @@ export function registerConnectionRoutes(
     );
   });
   app.post("/api/connections/managed", async (req) => {
-    await setupAdmin(req);
+    await setupAdmin?.(req);
     const workspaceId = await scope(req, true);
     await managedOpenwa.prepare(workspaceId);
     return { ok: true };
@@ -121,7 +121,7 @@ export function registerConnectionRoutes(
     return { ...connection, webhookRegistered };
   });
   app.post("/api/connections/:id/connect", async (req) => {
-    await setupAdmin(req);
+    await setupAdmin?.(req);
     const workspaceId = await scope(req, true);
     const connection = await db.connection.findUniqueOrThrow({
       where: { workspaceId_id: { workspaceId, id: idParam(req) } },
@@ -154,7 +154,7 @@ export function registerConnectionRoutes(
     return result;
   });
   app.post("/api/connections/:id/prepare-qr", async (req) => {
-    await setupAdmin(req);
+    await setupAdmin?.(req);
     const workspaceId = await scope(req, true);
     const connection = await db.connection.findFirst({
       where: { workspaceId, id: idParam(req), provider: "OPENWA" },
