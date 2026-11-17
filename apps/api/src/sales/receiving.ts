@@ -121,7 +121,7 @@ export async function receiveMessage(
     ) =>
       !paymentsAutomated
         ? respond(
-            "Gracias por tu interés. El equipo te indicará cómo continuar; los pagos por WhatsApp están desactivados por el momento.",
+            "¡Gracias por tu interés! El equipo te va a contactar para ayudarte a continuar.",
           )
         : context.outgoing(
         tx,
@@ -542,7 +542,7 @@ export async function receiveMessage(
             data: { paused: true, humanControlled: true, state: "HUMAN" },
           });
           await handoff(
-            "Gracias por tu interés. El equipo te contactará para continuar; los pagos por WhatsApp están desactivados por el momento.",
+            "¡Gracias por tu interés! El equipo te va a contactar para ayudarte a continuar.",
           );
           return { conversationId: conversation.id };
         }
@@ -567,7 +567,7 @@ export async function receiveMessage(
           data: { paused: true, humanControlled: true, state: "HUMAN" },
         });
         await handoff(
-          "Gracias por tu interés. El equipo te contactará para continuar; los pagos por WhatsApp están desactivados por el momento.",
+          "¡Gracias por tu interés! El equipo te va a contactar para ayudarte a continuar.",
         );
         return { conversationId: conversation.id };
       }
