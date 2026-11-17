@@ -526,6 +526,16 @@ export async function receiveMessage(
         return { conversationId: conversation.id };
       }
       if (!conversation.selectedPackNumber && purchaseIntent(query)) {
+        if (!paymentsAutomated) {
+          await tx.conversation.update({
+            where: { id: conversation.id },
+            data: { paused: true, humanControlled: true, state: "HUMAN" },
+          });
+          await respond(
+            "Gracias por tu interés. El equipo te contactará para continuar; los pagos por WhatsApp están desactivados por el momento.",
+          );
+          return { conversationId: conversation.id };
+        }
         await respond(
           `¿Cuál pack querés llevar? Respondé ${formatPackChoices(product.packs, product.currency, true)}.`,
         );

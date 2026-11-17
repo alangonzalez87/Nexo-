@@ -29,6 +29,7 @@ before(
     process.env.JWT_SECRET = "test-only-secret-of-at-least-32-characters";
     process.env.STORAGE_DIR = storageDir;
     process.env.OPENWA_WEBHOOK_SECRET = "webhook-test-secret";
+    process.env.NEXO_AUTOMATION_CUTOFF_AT = "1970-01-01T00:00:00.000Z";
     // Set TEST_DATABASE_URL to a dedicated PostgreSQL database to exercise real pooling.
     if (!process.env.TEST_DATABASE_URL) local = await startLocalDb(55433);
     db = new PrismaClient({
