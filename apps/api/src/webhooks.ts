@@ -28,6 +28,7 @@ export class WebhookService {
     });
     if (!connection)
       throw new HttpError(403, "La sesión no pertenece a este negocio.");
+    if (config.openwaSetupMode) return { ignored: true, reason: "setup_mode" };
     if (
       ![
         "message.sent",

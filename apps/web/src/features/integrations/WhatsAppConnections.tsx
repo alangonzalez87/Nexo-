@@ -107,7 +107,7 @@ export function WhatsAppConnections(
                       Mostrar QR
                     </button>
                   )}
-                  {canStopConnection(statusLoaded ? liveStatuses[c.id]?.status || "UNAVAILABLE" : "CHECKING") && (
+                  {!config.openwaSetupMode && canStopConnection(statusLoaded ? liveStatuses[c.id]?.status || "UNAVAILABLE" : "CHECKING") && (
                     <button
                       className="secondary disconnect-button"
                       disabled={busy}

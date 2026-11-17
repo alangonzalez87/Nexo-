@@ -126,7 +126,7 @@ export class IntegrationSettings {
       }),
     };
     if (this.defaults.forceSimulation) {
-      result.openwaEnabled = false;
+      result.openwaEnabled = !!this.defaults.openwaSetupMode && !!result.openwaEnabled;
       result.aiProvider = "rules";
     }
     return result;
@@ -155,9 +155,11 @@ export class IntegrationSettings {
       automaticOwnMessages: c.automaticOwnMessages || [],
       managed: !!(c as Config & { managed?: boolean }).managed,
       managedProvisionAvailable:
-        !!this.defaults.managedOpenwaAdminKey && !this.defaults.forceSimulation,
+        !!this.defaults.managedOpenwaAdminKey &&
+        (!this.defaults.forceSimulation || !!this.defaults.openwaSetupMode),
       forceSimulation: !!c.forceSimulation,
-      webhookUrl: `${c.publicUrl.replace(/\/$/, "")}/api/webhooks/openwa/${workspaceId}`,
+      openwaSetupMode: !!this.defaults.openwaSetupMode,
+      webhookUrl: `${(c.openwaWebhookBaseUrl || c.publicUrl).replace(/\/$/, "")}/api/webhooks/openwa/${workspaceId}`,
       latestWebhook: latest,
     };
   }

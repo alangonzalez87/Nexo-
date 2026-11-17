@@ -10,7 +10,7 @@ import { idParam } from "./context.js";
 
 export function registerConnectionRoutes(
   app: FastifyInstance,
-  { db, integrations, managedOpenwa, scope }: Pick<RouteContext, "db" | "integrations" | "managedOpenwa" | "scope">,
+  { db, integrations, managedOpenwa, scope, setupAdmin, config }: Pick<RouteContext, "db" | "integrations" | "managedOpenwa" | "scope" | "setupAdmin" | "config">,
 ) {
   app.get("/api/connections", async (req) =>
     db.connection.findMany({
@@ -19,6 +19,7 @@ export function registerConnectionRoutes(
     }),
   );
   app.get("/api/connections/live-status", async (req) => {
+    await setupAdmin(req);
     const workspaceId = await scope(req);
     const connections = await db.connection.findMany({
       where: { workspaceId, provider: "OPENWA" },
@@ -46,6 +47,7 @@ export function registerConnectionRoutes(
     );
   });
   app.post("/api/connections/managed", async (req) => {
+    await setupAdmin(req);
     const workspaceId = await scope(req, true);
     await managedOpenwa.prepare(workspaceId);
     return { ok: true };
@@ -110,7 +112,7 @@ export function registerConnectionRoutes(
     try {
       await adapter.registerWebhook(
         connection,
-        `${runtime.publicUrl}/api/webhooks/openwa/${workspaceId}`,
+        `${(runtime.openwaWebhookBaseUrl || runtime.publicUrl).replace(/\/$/, "")}/api/webhooks/openwa/${workspaceId}`,
       );
       webhookRegistered = true;
     } catch {
@@ -119,10 +121,13 @@ export function registerConnectionRoutes(
     return { ...connection, webhookRegistered };
   });
   app.post("/api/connections/:id/connect", async (req) => {
+    await setupAdmin(req);
     const workspaceId = await scope(req, true);
     const connection = await db.connection.findUniqueOrThrow({
       where: { workspaceId_id: { workspaceId, id: idParam(req) } },
     });
+    if (config.openwaSetupMode && connection.provider !== "OPENWA")
+      throw new HttpError(409, "En preparación sólo se habilitan sesiones OpenWA.");
     const result = await adapterFor(
       connection.provider,
       await integrations.resolve(workspaceId),
@@ -149,6 +154,7 @@ export function registerConnectionRoutes(
     return result;
   });
   app.post("/api/connections/:id/prepare-qr", async (req) => {
+    await setupAdmin(req);
     const workspaceId = await scope(req, true);
     const connection = await db.connection.findFirst({
       where: { workspaceId, id: idParam(req), provider: "OPENWA" },

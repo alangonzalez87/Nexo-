@@ -222,12 +222,14 @@ export class OpenWAAdapter implements MessagingAdapter {
     const match = existing.find((w: any) => w.url === url);
     const body = {
       url,
-      events: [
-        "message.sent",
-        "message.received",
-        "session.status",
-        "session.disconnected",
-      ],
+      events: this.config.openwaSetupMode
+        ? ["session.status", "session.disconnected"]
+        : [
+            "message.sent",
+            "message.received",
+            "session.status",
+            "session.disconnected",
+          ],
       secret: this.config.webhookSecret,
       retryCount: 5,
     };

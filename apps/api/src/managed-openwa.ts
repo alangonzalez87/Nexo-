@@ -14,7 +14,8 @@ export class ManagedOpenWA {
     private settings: IntegrationSettings,
   ) {}
   available() {
-    return !!this.config.managedOpenwaAdminKey && !this.config.forceSimulation;
+    return !!this.config.managedOpenwaAdminKey &&
+      (!this.config.forceSimulation || !!this.config.openwaSetupMode);
   }
   async prepare(workspaceId: string) {
     const existing = this.pending.get(workspaceId);
@@ -133,7 +134,7 @@ export class ManagedOpenWA {
     });
     await new OpenWAAdapter(saved).registerWebhook(
       connection,
-      `${saved.publicUrl}/api/webhooks/openwa/${workspaceId}`,
+      `${(saved.openwaWebhookBaseUrl || saved.publicUrl).replace(/\/$/, "")}/api/webhooks/openwa/${workspaceId}`,
     );
   }
 }

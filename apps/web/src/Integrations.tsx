@@ -38,14 +38,19 @@ export function Integrations({ embedded = false, connectionStatuses }: { embedde
           {notice}
         </div>
       )}
-      {config.forceSimulation && (
+      {config.openwaSetupMode && (
+        <div className="info-banner">
+          Preparación de WhatsApp: sólo se permite consultar estado, vincular por QR y registrar eventos de estado. Workers, respuestas automáticas y pagos siguen desactivados.
+        </div>
+      )}
+      {config.forceSimulation && !config.openwaSetupMode && (
         <div className="info-banner">
           Estás en modo de prueba. Abrí Nexo con “Iniciar Nexo y WhatsApp”
           para usar las conexiones reales.
         </div>
       )}
       <div className="two-columns">
-        <IntegrationSettingsForm {...controller} />
+        {!config.openwaSetupMode && <IntegrationSettingsForm {...controller} />}
         <WhatsAppConnections {...controller} />
       </div>
     </div>

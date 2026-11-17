@@ -8,9 +8,10 @@ import { idParam } from "./context.js";
 
 export function registerWebhookRoutes(
   app: FastifyInstance,
-  { db, integrations, webhooks, scope }: Pick<RouteContext, "db" | "integrations" | "webhooks" | "scope">,
+  { db, integrations, webhooks, scope, setupAdmin }: Pick<RouteContext, "db" | "integrations" | "webhooks" | "scope" | "setupAdmin">,
 ) {
   app.post("/api/connections/:id/webhook", async (req) => {
+    await setupAdmin(req);
     const workspaceId = await scope(req, true),
       runtime = await integrations.resolve(workspaceId);
     const connection = await db.connection.findFirst({
@@ -19,7 +20,7 @@ export function registerWebhookRoutes(
     if (!connection) throw new HttpError(404, "Conexión OpenWA no encontrada.");
     return new OpenWAAdapter(runtime).registerWebhook(
       connection,
-      `${runtime.publicUrl}/api/webhooks/openwa/${workspaceId}`,
+      `${(runtime.openwaWebhookBaseUrl || runtime.publicUrl).replace(/\/$/, "")}/api/webhooks/openwa/${workspaceId}`,
     );
   });
   app.post(

@@ -13,7 +13,7 @@ import { idParam } from "./context.js";
 
 export function registerIntegrationRoutes(
   app: FastifyInstance,
-  { db, integrations, scope }: Pick<RouteContext, "db" | "integrations" | "scope">,
+  { db, integrations, scope, setupAdmin }: Pick<RouteContext, "db" | "integrations" | "scope" | "setupAdmin">,
 ) {
   app.get("/api/integrations/events", async (req) => {
     const workspaceId = await scope(req);
@@ -35,6 +35,7 @@ export function registerIntegrationRoutes(
     });
   });
   app.get("/api/integrations/config", async (req, reply) => {
+    await setupAdmin(req);
     reply.header("Cache-Control", "no-store");
     return integrations.view(await scope(req, true));
   });

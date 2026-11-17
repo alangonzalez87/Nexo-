@@ -17,6 +17,7 @@ export interface RouteContext {
   webhooks: WebhookService;
   scope: (req: FastifyRequest, write?: boolean) => Promise<string>;
   identity: (req: FastifyRequest) => string;
+  setupAdmin: (req: FastifyRequest) => Promise<void>;
 }
 
 export const idParam = (req: FastifyRequest) =>

@@ -33,14 +33,28 @@ export async function buildApp(
   if (config.preview) config = { ...config, forceSimulation: true };
   const app = Fastify({ logger: false, bodyLimit: 12 * 1024 * 1024 });
   if (config.preview) {
-    // The test deployment is read-only except for authentication. In particular,
-    // direct routes cannot process payments, dispatch sends or accept webhooks.
+    // The test deployment is read-only except for authentication. Setup mode
+    // grants only the narrowly scoped, platform-admin OpenWA setup routes.
     app.addHook("onRequest", async (req, reply) => {
       const path = req.routeOptions.url;
       const login = req.method === "POST" && path === "/api/auth/login";
+      const setupRead =
+        config.openwaSetupMode &&
+        req.method === "GET" &&
+        path === "/api/connections/live-status";
+      const setupWrite =
+        config.openwaSetupMode &&
+        req.method === "POST" &&
+        [
+          "/api/connections/managed",
+          "/api/connections/:id/prepare-qr",
+          "/api/connections/:id/connect",
+          "/api/connections/:id/webhook",
+          "/api/webhooks/openwa/:workspaceId",
+        ].includes(path || "");
       if (
-        (!["GET", "HEAD", "OPTIONS"].includes(req.method) && !login) ||
-        path === "/api/connections/live-status"
+        (!["GET", "HEAD", "OPTIONS"].includes(req.method) && !login && !setupWrite) ||
+        (path === "/api/connections/live-status" && !setupRead)
       )
         return reply
           .code(403)
@@ -106,6 +120,9 @@ export async function buildApp(
     if (!membership || (write && membership.role !== "ADMIN"))
       throw new HttpError(403, "No tenés permiso en este negocio.");
     return workspaceId;
+  };
+  const setupAdmin = async (req: FastifyRequest) => {
+    if (config.openwaSetupMode) await platformAdmin(req);
   };
   app.setErrorHandler((error, _req, reply) => {
     if (error instanceof ZodError)
@@ -266,6 +283,7 @@ export async function buildApp(
     webhooks,
     scope,
     identity,
+    setupAdmin,
   };
   registerWorkspaceRoutes(app, routes);
   registerProductRoutes(app, routes);
