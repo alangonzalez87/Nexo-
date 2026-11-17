@@ -104,6 +104,16 @@ export async function receiveMessage(
         "AUTO",
         imageId,
       );
+    const handoff = (text: string) =>
+      context.outgoing(
+        tx,
+        workspaceId,
+        conversation.id,
+        text,
+        `handoff:${eventKey}`,
+        undefined,
+        "HUMAN",
+      );
     const respondPaymentDetails = (
       text: string,
       enabled: boolean,
@@ -252,7 +262,7 @@ export async function receiveMessage(
         },
       });
       if (!conversation.humanControlled)
-        await respond(
+        await handoff(
           paymentsAutomated
             ? "Recibimos un aviso de archivo, pero no pudimos descargarlo. El equipo revisará el caso; el pago no está aprobado."
             : "No pudimos descargar el archivo. El equipo lo revisará manualmente; no se procesó ningún pago.",
@@ -274,7 +284,7 @@ export async function receiveMessage(
           },
         });
         if (!conversation.humanControlled)
-          await respond(
+          await handoff(
             "Recibimos tu archivo. El equipo lo revisará manualmente; no se procesó ni aprobó ningún pago.",
           );
         return { conversationId: conversation.id };
@@ -531,7 +541,7 @@ export async function receiveMessage(
             where: { id: conversation.id },
             data: { paused: true, humanControlled: true, state: "HUMAN" },
           });
-          await respond(
+          await handoff(
             "Gracias por tu interés. El equipo te contactará para continuar; los pagos por WhatsApp están desactivados por el momento.",
           );
           return { conversationId: conversation.id };
@@ -556,7 +566,7 @@ export async function receiveMessage(
           where: { id: conversation.id },
           data: { paused: true, humanControlled: true, state: "HUMAN" },
         });
-        await respond(
+        await handoff(
           "Gracias por tu interés. El equipo te contactará para continuar; los pagos por WhatsApp están desactivados por el momento.",
         );
         return { conversationId: conversation.id };
