@@ -52,7 +52,7 @@ export function configFromEnv(): Config {
     managedOpenwaAdminKey: process.env.OPENWA_MANAGED_ADMIN_KEY,
     automationCutoffAt,
     paymentAutomationEnabled:
-      process.env.PAYMENT_AUTOMATION_ENABLED === "true",
+      process.env.PAYMENT_AUTOMATION_ENABLED !== "false",
     storageDir: resolve(process.env.STORAGE_DIR || "../../.data/private"),
     publicUrl,
     openwaWebhookBaseUrl,

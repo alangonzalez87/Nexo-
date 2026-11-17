@@ -1514,13 +1514,6 @@ test("live cutoff preserves old queues and disables payment automation while new
     connectionId: connection.id,
     eventId: randomUUID(),
     contact,
-    text: "CURSOIA",
-  });
-  await ctx.sales.dispatch(workspaceId);
-  await ctx.sales.receive(workspaceId, {
-    connectionId: connection.id,
-    eventId: randomUUID(),
-    contact,
     text: "quiero comprar",
   });
   await ctx.sales.dispatch(workspaceId);
