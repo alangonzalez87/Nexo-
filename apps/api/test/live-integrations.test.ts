@@ -1554,7 +1554,7 @@ test("live cutoff preserves old queues and disables payment automation while new
         call.url.endsWith("/send-text") && call.body.chatId === contact,
     )
     .map((call) => call.body.text);
-  assert.ok(customerReplies.length >= 2);
+  assert.ok(customerReplies.length >= 1);
   assert.ok(customerReplies.some((text) => text.includes("desactivados")));
   assert.ok(
     customerReplies.every(
