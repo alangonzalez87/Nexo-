@@ -5,10 +5,11 @@ COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
 COPY packages/database/package.json packages/database/package.json
-RUN npm ci
+RUN npm ci --include=dev
 COPY . .
 RUN npm run db:generate && npm run build
 RUN mkdir -p /app/.data/private && chown -R node:node /app
 USER node
-EXPOSE 3001 5173
-CMD ["npm", "run", "start", "-w", "@nexo/api"]
+ENV NODE_ENV=production NEXO_PREVIEW=true NEXO_REQUIRE_PREVIEW=true FORCE_SIMULATION=true HOST=0.0.0.0 NEXO_WEB_DIST=/app/apps/web/dist STORAGE_DIR=/app/.data/private
+EXPOSE 3001
+CMD ["node", "--import", "tsx", "apps/api/src/preview-server.ts"]

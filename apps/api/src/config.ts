@@ -13,12 +13,16 @@ export interface Config {
   webhookSecret: string;
   credentialsKey?: string;
   forceSimulation?: boolean;
+  preview?: boolean;
   openwaAllowedOrigins?: string[];
   platformAdminEmail?: string;
   managedOpenwaAdminKey?: string;
   automaticOwnMessages?: string[];
 }
 export function configFromEnv(): Config {
+  const preview = process.env.NEXO_PREVIEW === "true";
+  if (process.env.NEXO_REQUIRE_PREVIEW === "true" && !preview)
+    throw new Error("Esta imagen requiere NEXO_PREVIEW=true.");
   const jwtSecret = process.env.JWT_SECRET || "";
   if (jwtSecret.length < 32)
     throw new Error(
@@ -39,7 +43,8 @@ export function configFromEnv(): Config {
     openwaKey: process.env.OPENWA_API_KEY || "",
     webhookSecret: process.env.OPENWA_WEBHOOK_SECRET || "",
     credentialsKey: process.env.CREDENTIALS_KEY,
-    forceSimulation: process.env.FORCE_SIMULATION === "true",
+    preview,
+    forceSimulation: preview || process.env.FORCE_SIMULATION === "true",
     openwaAllowedOrigins: process.env.OPENWA_ALLOWED_ORIGINS?.split(",")
       .map((v) => v.trim())
       .filter(Boolean),

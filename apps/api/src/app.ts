@@ -23,20 +23,39 @@ import { registerSalesRoutes } from "./routes/sales.js";
 import { registerAssetRoutes } from "./routes/assets.js";
 import { registerIntegrationRoutes } from "./routes/integrations.js";
 import { registerWebhookRoutes } from "./routes/webhooks.js";
+import { registerPreviewWeb } from "./preview-web.js";
 
 export async function buildApp(
   db: PrismaClient,
   config: Config,
   selector?: Selector,
 ) {
+  if (config.preview) config = { ...config, forceSimulation: true };
   const app = Fastify({ logger: false, bodyLimit: 12 * 1024 * 1024 });
+  if (config.preview) {
+    // The test deployment is read-only except for authentication. In particular,
+    // direct routes cannot process payments, dispatch sends or accept webhooks.
+    app.addHook("onRequest", async (req, reply) => {
+      const path = req.routeOptions.url;
+      const login = req.method === "POST" && path === "/api/auth/login";
+      if (
+        (!["GET", "HEAD", "OPTIONS"].includes(req.method) && !login) ||
+        path === "/api/connections/live-status"
+      )
+        return reply
+          .code(403)
+          .send({ error: "Operación deshabilitada en el entorno de prueba." });
+    });
+    registerPreviewWeb(app);
+  }
   await app.register(cors, { origin: config.webOrigin });
   await app.register(jwt, { secret: config.jwtSecret });
   await app.register(multipart, {
     limits: { fileSize: 8 * 1024 * 1024, files: 1, fields: 3 },
   });
   await app.register(rateLimit, {
-    max: 240, timeWindow: "1 minute",
+    max: 240,
+    timeWindow: "1 minute",
     keyGenerator: async (req) => {
       try {
         await req.jwtVerify();
@@ -112,23 +131,25 @@ export async function buildApp(
   });
   app.get("/health", async () => {
     await db.$queryRaw`SELECT 1`;
-    return {
-      status: "ok",
-      messagingDefault: "MOCK",
-      ai: "configured-per-workspace",
-    };
+    return { status: "ok" };
   });
   app.post(
     "/api/auth/login",
-    { config: { rateLimit: {
-      max: 10, timeWindow: "1 minute", hook: "preHandler",
-      keyGenerator: (req: FastifyRequest) => {
-        const email = (req.body as { email?: unknown } | null)?.email;
-        return typeof email === "string" && email.length <= 254
-          ? `login:${sha256(email.trim().toLowerCase())}`
-          : `login-invalid:${req.ip}`;
+    {
+      config: {
+        rateLimit: {
+          max: 10,
+          timeWindow: "1 minute",
+          hook: "preHandler",
+          keyGenerator: (req: FastifyRequest) => {
+            const email = (req.body as { email?: unknown } | null)?.email;
+            return typeof email === "string" && email.length <= 254
+              ? `login:${sha256(email.trim().toLowerCase())}`
+              : `login-invalid:${req.ip}`;
+          },
+        },
       },
-    } } },
+    },
     async (req) => {
       const body = z
         .object({
@@ -237,7 +258,14 @@ export async function buildApp(
     });
   });
   const routes: RouteContext = {
-    db, config, sales, integrations, managedOpenwa, webhooks, scope, identity,
+    db,
+    config,
+    sales,
+    integrations,
+    managedOpenwa,
+    webhooks,
+    scope,
+    identity,
   };
   registerWorkspaceRoutes(app, routes);
   registerProductRoutes(app, routes);
