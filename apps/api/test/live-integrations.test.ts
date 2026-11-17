@@ -1435,6 +1435,15 @@ test("live cutoff preserves old queues and disables payment automation while new
   });
   const contact = "5491100000101@c.us";
   const oldContact = "5491100000102@c.us";
+  await db.conversation.create({
+    data: {
+      workspaceId,
+      connectionId: connection.id,
+      productId: product.id,
+      contact,
+      state: "QUALIFIED",
+    },
+  });
   const oldConversation = await db.conversation.create({
     data: {
       workspaceId,
