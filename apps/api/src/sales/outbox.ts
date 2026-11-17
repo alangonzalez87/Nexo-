@@ -67,6 +67,10 @@ export class OutboxService {
     );
   }
   async queueDueRemarketing(workspaceId: string) {
+    const runtime =
+      (await this.context.integrations?.resolve(workspaceId)) ||
+      this.context.config;
+    if (runtime.paymentAutomationEnabled === false) return false;
     if (Date.now() - (this.lastRemarketingScan.get(workspaceId) || 0) < 30000)
       return false;
     this.lastRemarketingScan.set(workspaceId, Date.now());
@@ -122,10 +126,22 @@ export class OutboxService {
     const runtime =
       (await this.context.integrations?.resolve(workspaceId)) ||
       this.context.config;
+    if (runtime.preview === false && !runtime.automationCutoffAt)
+      return false;
     return this.context.locked(workspaceId, async (tx) => {
       let sent = false;
       const pending = await tx.message.findMany({
-        where: { workspaceId, status: "PENDING", direction: "OUT" },
+        where: {
+          workspaceId,
+          status: "PENDING",
+          direction: "OUT",
+          ...(runtime.automationCutoffAt
+            ? { createdAt: { gte: runtime.automationCutoffAt } }
+            : {}),
+          ...(runtime.paymentAutomationEnabled === false
+            ? { origin: { not: "PAYMENT" } }
+            : {}),
+        },
         orderBy: { createdAt: "asc" },
         take: 25,
         include: {

@@ -1404,3 +1404,159 @@ test("photo outbox uses send-image once and ambiguous failures require review", 
   await ctx.sales.dispatch(workspaceId);
   assert.equal(images().length, 2);
 });
+
+test("live cutoff preserves old queues and disables payment automation while new WhatsApp replies work", async () => {
+  const user = await seed(
+    db,
+    `go-live-${randomUUID()}@nexo.local`,
+    "go-live-fixture-password",
+  );
+  const workspaceId = user.workspaceId;
+  const cutoff = new Date(Date.now() - 1000);
+  config.preview = false;
+  config.automationCutoffAt = cutoff;
+  config.paymentAutomationEnabled = false;
+  await ctx.integrations.save(workspaceId, {
+    ...savedConfig,
+    aiProvider: "rules",
+    openaiKey: undefined,
+  });
+  const product = await db.product.findFirstOrThrow({
+    where: { workspaceId },
+  });
+  const connection = await db.connection.create({
+    data: {
+      workspaceId,
+      name: "Go-live fixture",
+      provider: "OPENWA",
+      sessionId: randomUUID(),
+      status: "CONNECTED",
+    },
+  });
+  const contact = "5491100000101@c.us";
+  const oldContact = "5491100000102@c.us";
+  const oldConversation = await db.conversation.create({
+    data: {
+      workspaceId,
+      connectionId: connection.id,
+      productId: product.id,
+      contact: oldContact,
+      state: "QUALIFIED",
+    },
+  });
+  const oldMessage = await db.message.create({
+    data: {
+      workspaceId,
+      conversationId: oldConversation.id,
+      externalId: `old-pending-${randomUUID()}`,
+      direction: "OUT",
+      origin: "HUMAN",
+      status: "PENDING",
+      text: "Mensaje histórico pendiente",
+      createdAt: new Date(cutoff.getTime() - 60_000),
+    },
+  });
+  const oldWebhook = await db.webhookInbox.create({
+    data: {
+      id: randomUUID(),
+      workspaceId,
+      connectionId: connection.id,
+      payload: {
+        event: "message.received",
+        data: { id: "old-webhook", body: "mensaje antiguo" },
+      },
+      status: "PENDING",
+      createdAt: new Date(cutoff.getTime() - 60_000),
+    },
+  });
+  const asset = await db.asset.create({
+    data: {
+      workspaceId,
+      originalName: "old-receipt.pdf",
+      mime: "application/pdf",
+      path: join(storage, "old-receipt.pdf"),
+      size: 1,
+      purpose: "RECEIPT",
+    },
+  });
+  const oldPayment = await db.payment.create({
+    data: {
+      workspaceId,
+      conversationId: oldConversation.id,
+      assetId: asset.id,
+      receiptMode: "AUTO_RECEIPT",
+      receiptCheckStatus: "NOT_RUN",
+    },
+  });
+
+  await ctx.webhooks.process(workspaceId);
+  await ctx.sales.verifyPendingReceipts(workspaceId);
+  assert.equal(
+    (await db.webhookInbox.findUniqueOrThrow({ where: { id: oldWebhook.id } }))
+      .status,
+    "PENDING",
+  );
+  assert.equal(
+    (await db.message.findUniqueOrThrow({ where: { id: oldMessage.id } }))
+      .status,
+    "PENDING",
+  );
+  assert.equal(
+    (
+      await db.payment.findUniqueOrThrow({
+        where: { workspaceId_id: { workspaceId, id: oldPayment.id } },
+      })
+    ).receiptCheckStatus,
+    "NOT_RUN",
+  );
+
+  await ctx.sales.receive(workspaceId, {
+    connectionId: connection.id,
+    eventId: randomUUID(),
+    contact,
+    text: "CURSOIA",
+  });
+  await ctx.sales.dispatch(workspaceId);
+  await ctx.sales.receive(workspaceId, {
+    connectionId: connection.id,
+    eventId: randomUUID(),
+    contact,
+    text: "quiero comprar",
+  });
+  await ctx.sales.dispatch(workspaceId);
+
+  const updatedConversation = await db.conversation.findUniqueOrThrow({
+    where: {
+      workspaceId_connectionId_contact: {
+        workspaceId,
+        connectionId: connection.id,
+        contact,
+      },
+    },
+  });
+  assert.ok(updatedConversation);
+  assert.equal(updatedConversation.humanControlled, true);
+  assert.equal(updatedConversation.state, "HUMAN");
+  assert.equal(
+    await db.payment.count({ where: { workspaceId, status: "PENDING" } }),
+    1,
+  );
+  assert.equal(
+    (await db.message.findUniqueOrThrow({ where: { id: oldMessage.id } }))
+      .status,
+    "PENDING",
+  );
+  const customerReplies = calls
+    .filter(
+      (call) =>
+        call.url.endsWith("/send-text") && call.body.chatId === contact,
+    )
+    .map((call) => call.body.text);
+  assert.ok(customerReplies.length >= 2);
+  assert.ok(customerReplies.some((text) => text.includes("desactivados")));
+  assert.ok(
+    customerReplies.every(
+      (text) => !text.includes("demo.nexo.ventas") && !text.includes("alias"),
+    ),
+  );
+});

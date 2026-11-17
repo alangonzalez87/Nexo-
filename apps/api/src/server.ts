@@ -12,7 +12,7 @@ await app.listen({
 console.log(
   `Nexo API lista en ${(app.server.address() && process.env.PORT) || 3001}`,
 );
-const stopWorker = config.preview
+const stopWorker = config.preview || !config.automationCutoffAt
   ? async () => {}
   : startWorker(
       {
@@ -22,6 +22,8 @@ const stopWorker = config.preview
       },
       {
         intervalMs: 3000,
+        paymentAutomationEnabled:
+          config.paymentAutomationEnabled === true,
         onError: (workspaceId) =>
           console.error(
             workspaceId

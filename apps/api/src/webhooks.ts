@@ -23,6 +23,14 @@ export class WebhookService {
     if (!config.openwaEnabled)
       throw new HttpError(409, "OpenWA no está habilitado en este negocio.");
     const event = envelope.parse(JSON.parse(body.toString()));
+    if (config.automationCutoffAt && event.timestamp) {
+      const eventTime = Date.parse(event.timestamp);
+      if (
+        Number.isFinite(eventTime) &&
+        eventTime < config.automationCutoffAt.getTime()
+      )
+        return { ignored: true, reason: "before_automation_cutoff" };
+    }
     const connection = await this.db.connection.findFirst({
       where: { workspaceId, sessionId: event.sessionId, provider: "OPENWA" },
     });
@@ -112,9 +120,16 @@ export class WebhookService {
   async process(workspaceId: string) {
     const runtime = await this.integrations.resolve(workspaceId);
     if (!runtime.openwaEnabled) return;
+    if (runtime.preview === false && !runtime.automationCutoffAt) return;
     // Oldest unresolved event blocks later events for this workspace, preserving ingress order.
     const item = await this.db.webhookInbox.findFirst({
-      where: { workspaceId, status: { in: ["PENDING", "PROCESSING"] } },
+      where: {
+        workspaceId,
+        status: { in: ["PENDING", "PROCESSING"] },
+        ...(runtime.automationCutoffAt
+          ? { createdAt: { gte: runtime.automationCutoffAt } }
+          : {}),
+      },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     });
     if (!item || item.nextAttemptAt > new Date()) return;
@@ -160,6 +175,18 @@ export class WebhookService {
           workspace.approvalPhone &&
           senderPhone === workspace.approvalPhone
         ) {
+          if (runtime.paymentAutomationEnabled === false) {
+            await this.db.webhookInbox.update({
+              where: { id: item.id },
+              data: {
+                status: "DONE",
+                processedAt: new Date(),
+                lastError: null,
+                payload: { event: payload.event },
+              },
+            });
+            return;
+          }
           const command = (m.body || "").match(
             /^\s*(APROBAR|ENTREGADO|RECHAZAR)\s+([a-z0-9_-]{5,80})\.([a-z0-9_-]{5,80})(?:\s+([\s\S]+))?\s*$/i,
           );
@@ -272,9 +299,16 @@ export class WebhookService {
           media,
           mediaUnavailable,
         });
-        if (received.paymentId)
+        if (
+          received.paymentId &&
+          runtime.paymentAutomationEnabled !== false
+        )
           await this.sales.verifyReceipt(workspaceId, received.paymentId);
-        if (media && (m.type === "image" || m.type === "document")) {
+        if (
+          runtime.paymentAutomationEnabled !== false &&
+          media &&
+          (m.type === "image" || m.type === "document")
+        ) {
           await notifyPendingReceipt(
             this.db,
             adapter,

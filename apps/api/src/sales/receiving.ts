@@ -28,6 +28,7 @@ export async function receiveMessage(
 ) {
   const runtime =
     (await context.integrations?.resolve(workspaceId)) || context.config;
+  const paymentsAutomated = runtime.paymentAutomationEnabled !== false;
   const selector =
     context.selector ||
     (runtime.aiProvider === "openai" && runtime.openaiKey
@@ -108,7 +109,11 @@ export async function receiveMessage(
       enabled: boolean,
       imageId?: string | null,
     ) =>
-      context.outgoing(
+      !paymentsAutomated
+        ? respond(
+            "Gracias por tu interés. El equipo te indicará cómo continuar; los pagos por WhatsApp están desactivados por el momento.",
+          )
+        : context.outgoing(
         tx,
         workspaceId,
         conversation.id,
@@ -236,6 +241,7 @@ export async function receiveMessage(
         where: { id: conversation.id },
         data: {
           paused: true,
+          humanControlled: true,
           state: conversation.state === "WON" ? "WON" : "HUMAN",
         },
       });
@@ -247,13 +253,32 @@ export async function receiveMessage(
       });
       if (!conversation.humanControlled)
         await respond(
-          "Recibimos un aviso de archivo, pero no pudimos descargarlo. El equipo revisará el caso; el pago no está aprobado.",
+          paymentsAutomated
+            ? "Recibimos un aviso de archivo, pero no pudimos descargarlo. El equipo revisará el caso; el pago no está aprobado."
+            : "No pudimos descargar el archivo. El equipo lo revisará manualmente; no se procesó ningún pago.",
         );
       return { conversationId: conversation.id };
     }
     if (asset) {
       if (conversation.state === "WON")
         return { conversationId: conversation.id };
+      if (!paymentsAutomated) {
+        await tx.conversation.update({
+          where: { id: conversation.id },
+          data: { paused: true, humanControlled: true, state: "HUMAN" },
+        });
+        await tx.notification.create({
+          data: {
+            workspaceId,
+            text: "Se recibió un archivo; pagos desactivados, requiere revisión manual.",
+          },
+        });
+        if (!conversation.humanControlled)
+          await respond(
+            "Recibimos tu archivo. El equipo lo revisará manualmente; no se procesó ni aprobó ningún pago.",
+          );
+        return { conversationId: conversation.id };
+      }
       const receiptMode = product.receiptMode;
       const pending = await tx.payment.findFirst({
         where: {
@@ -432,7 +457,10 @@ export async function receiveMessage(
             selectedPackDeliveryMessage: selected.deliveryMessage,
             quotedPriceCents: selected.priceCents,
             quotedCurrency: product.currency,
-            state: workspace.paymentAlias ? "AWAITING_PAYMENT" : "QUALIFIED",
+            state:
+              paymentsAutomated && workspace.paymentAlias
+                ? "AWAITING_PAYMENT"
+                : "QUALIFIED",
           },
         });
         await respondPaymentDetails(
@@ -513,6 +541,16 @@ export async function receiveMessage(
       }
     }
     if (purchaseIntent(query)) {
+      if (!paymentsAutomated) {
+        await tx.conversation.update({
+          where: { id: conversation.id },
+          data: { paused: true, humanControlled: true, state: "HUMAN" },
+        });
+        await respond(
+          "Gracias por tu interés. El equipo te contactará para continuar; los pagos por WhatsApp están desactivados por el momento.",
+        );
+        return { conversationId: conversation.id };
+      }
       const workspace = await tx.workspace.findUniqueOrThrow({
         where: { id: workspaceId },
       });

@@ -20,6 +20,8 @@ export class ReceiptService {
     const runtime =
       (await this.context.integrations?.resolve(workspaceId)) ||
       this.context.config;
+    if (userId === "auto:receipt" && runtime.paymentAutomationEnabled === false)
+      throw new HttpError(409, "La automatización de pagos está desactivada.");
     return this.context.locked(workspaceId, async (tx) => {
       let payment = await tx.payment.findFirst({
         where: { workspaceId, id: paymentId },
@@ -293,6 +295,7 @@ export class ReceiptService {
     }
   }
   async verifyReceipt(workspaceId: string, paymentId: string) {
+    if (this.context.config.paymentAutomationEnabled === false) return;
     const payment = await this.context.db.payment.findFirst({
       where: {
         workspaceId,
@@ -432,6 +435,7 @@ export class ReceiptService {
     }
   }
   async verifyPendingReceipts(workspaceId: string) {
+    if (this.context.config.paymentAutomationEnabled === false) return;
     const payments = await this.context.db.payment.findMany({
       where: {
         workspaceId,

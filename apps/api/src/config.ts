@@ -20,10 +20,18 @@ export interface Config {
   platformAdminEmail?: string;
   managedOpenwaAdminKey?: string;
   automaticOwnMessages?: string[];
+  automationCutoffAt?: Date;
+  paymentAutomationEnabled?: boolean;
 }
 export function configFromEnv(): Config {
   const preview = process.env.NEXO_PREVIEW === "true";
   const openwaSetupMode = preview && process.env.NEXO_OPENWA_SETUP_MODE === "true";
+  const automationCutoffRaw = process.env.NEXO_AUTOMATION_CUTOFF_AT?.trim();
+  const automationCutoffAt = automationCutoffRaw
+    ? new Date(automationCutoffRaw)
+    : undefined;
+  if (automationCutoffRaw && Number.isNaN(automationCutoffAt!.getTime()))
+    throw new Error("NEXO_AUTOMATION_CUTOFF_AT debe ser una fecha ISO válida.");
   if (process.env.NEXO_REQUIRE_PREVIEW === "true" && !preview)
     throw new Error("Esta imagen requiere NEXO_PREVIEW=true.");
   const jwtSecret = process.env.JWT_SECRET || "";
@@ -42,6 +50,9 @@ export function configFromEnv(): Config {
     jwtSecret,
     platformAdminEmail: process.env.ADMIN_EMAIL?.trim().toLowerCase(),
     managedOpenwaAdminKey: process.env.OPENWA_MANAGED_ADMIN_KEY,
+    automationCutoffAt,
+    paymentAutomationEnabled:
+      process.env.PAYMENT_AUTOMATION_ENABLED === "true",
     storageDir: resolve(process.env.STORAGE_DIR || "../../.data/private"),
     publicUrl,
     openwaWebhookBaseUrl,

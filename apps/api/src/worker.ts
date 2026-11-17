@@ -10,7 +10,11 @@ type WorkerServices = {
 /** One cycle at a time; stop waits for the active cycle before closing its dependencies. */
 export function startWorker(
   services: WorkerServices,
-  options: { intervalMs: number; onError: (workspaceId?: string) => void },
+  options: {
+    intervalMs: number;
+    onError: (workspaceId?: string) => void;
+    paymentAutomationEnabled?: boolean;
+  },
 ) {
   let pending: Promise<void> | undefined;
   let stopped = false;
@@ -19,8 +23,10 @@ export function startWorker(
       for (const workspace of await services.listWorkspaces()) {
         try {
           await services.webhooks.process(workspace.id);
-          await services.sales.verifyPendingReceipts(workspace.id);
-          await services.sales.queueDueRemarketing(workspace.id);
+          if (options.paymentAutomationEnabled !== false) {
+            await services.sales.verifyPendingReceipts(workspace.id);
+            await services.sales.queueDueRemarketing(workspace.id);
+          }
           await services.sales.dispatchBatch(workspace.id);
         } catch {
           options.onError(workspace.id);
