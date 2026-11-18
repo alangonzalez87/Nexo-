@@ -60,8 +60,11 @@ export async function buildApp(
           .code(403)
           .send({ error: "Operación deshabilitada en el entorno de prueba." });
     });
-    registerPreviewWeb(app);
   }
+  // Serve the same-origin frontend in both preview and production. Preview
+  // restrictions above still guard API operations; the static UI is public,
+  // while its data remains protected by the existing API authentication.
+  registerPreviewWeb(app);
   await app.register(cors, { origin: config.webOrigin });
   await app.register(jwt, { secret: config.jwtSecret });
   await app.register(multipart, {
