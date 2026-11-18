@@ -677,6 +677,75 @@ test("manual receipt acknowledgement is delivered during human control without a
     before + 1,
   );
 });
+test("a text claiming a sent receipt gets an accurate handoff and no loop", async () => {
+  const f = await fixture("MANUAL");
+  const started = await f.send("receipt-claim", "PRUEBA");
+  await f.send("receipt-claim", "1");
+  const paymentsBefore = await db.payment.count({
+    where: { conversationId: started.conversationId },
+  });
+  await f.send("receipt-claim", "Ya t envié el comprobante");
+  await f.sales.dispatch(f.workspaceId);
+  const chat = await db.conversation.findUniqueOrThrow({
+    where: { id: started.conversationId },
+  });
+  assert.equal(chat.paused, true);
+  assert.equal(chat.humanControlled, true);
+  assert.equal(
+    await db.payment.count({
+      where: { conversationId: started.conversationId },
+    }),
+    paymentsBefore,
+  );
+  const reply = await db.message.findFirstOrThrow({
+    where: {
+      conversationId: started.conversationId,
+      direction: "OUT",
+      origin: "HUMAN",
+      text: { contains: "No me aparece un comprobante adjunto" },
+    },
+  });
+  assert.equal(reply.status, "SENT");
+  const outBefore = await db.message.count({
+    where: { conversationId: started.conversationId, direction: "OUT" },
+  });
+  await f.send("receipt-claim", "Y el pago?");
+  assert.equal(
+    await db.message.count({
+      where: { conversationId: started.conversationId, direction: "OUT" },
+    }),
+    outBefore,
+  );
+});
+test("frustration pauses the assistant and notifies the operator", async () => {
+  const f = await fixture("MANUAL");
+  const started = await f.send("frustrated-buyer", "PRUEBA");
+  await f.send("frustrated-buyer", "Me jodes lpm");
+  await f.sales.dispatch(f.workspaceId);
+  const chat = await db.conversation.findUniqueOrThrow({
+    where: { id: started.conversationId },
+  });
+  assert.equal(chat.paused, true);
+  assert.equal(chat.humanControlled, true);
+  assert.ok(
+    await db.message.findFirst({
+      where: {
+        conversationId: started.conversationId,
+        direction: "OUT",
+        origin: "HUMAN",
+        text: { contains: "No me aparece un comprobante registrado" },
+      },
+    }),
+  );
+  assert.ok(
+    await db.notification.findFirst({
+      where: {
+        workspaceId: f.workspaceId,
+        text: { contains: "expresa frustración" },
+      },
+    }),
+  );
+});
 test("already delivered approval records payment and fingerprint without any send or delivery token", async () => {
   const f = await fixture();
   const payment = await f.buy(

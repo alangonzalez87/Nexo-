@@ -369,6 +369,69 @@ export class WebhookService {
       console.error(
         `Webhook processing failed: ${errorName}${errorCode ? `/${errorCode}` : ""}${statusCode ? ` HTTP ${statusCode}` : ""}`,
       );
+      if (terminal) {
+        try {
+          const failedPayload = item.payload as {
+            event?: string;
+            data?: unknown;
+          };
+          if (failedPayload.event === "message.received") {
+            const message = messageSchema.parse(failedPayload.data);
+            if (
+              !message.fromMe &&
+              (message.type === "image" || message.type === "document")
+            ) {
+              const externalId = sha256(
+                `${workspaceId}:${item.connectionId}:${message.id}`,
+              );
+              const alreadyRecorded = await this.db.message.findUnique({
+                where: { externalId },
+                select: { id: true },
+              });
+              if (!alreadyRecorded) {
+                await this.db.connection.update({
+                  where: { id: item.connectionId },
+                  data: { status: "CONNECTED" },
+                });
+                await this.sales.receive(workspaceId, {
+                  connectionId: item.connectionId,
+                  eventId: message.id,
+                  contact: message.chatId,
+                  contactName:
+                    contactName(message.contact?.name) ||
+                    contactName(message.contact?.pushName),
+                  contactPhone:
+                    phoneFromContact(message.chatId) ||
+                    validPhone(message.senderPhone),
+                  text: (message.body || "").slice(0, 4000),
+                  mediaUnavailable: true,
+                });
+              }
+              await this.db.webhookInbox.update({
+                where: { id: item.id },
+                data: {
+                  status: "DONE",
+                  processedAt: new Date(),
+                  lastError: null,
+                  payload: { event: failedPayload.event },
+                },
+              });
+              return;
+            }
+          }
+        } catch (fallbackError) {
+          const value =
+            fallbackError && typeof fallbackError === "object"
+              ? (fallbackError as { name?: unknown })
+              : {};
+          const fallbackName =
+            typeof value.name === "string" &&
+            /^[a-z0-9_]+$/i.test(value.name)
+              ? value.name
+              : "Error";
+          console.error(`Webhook media fallback failed: ${fallbackName}`);
+        }
+      }
       await this.db.webhookInbox.update({
         where: { id: item.id },
         data: {

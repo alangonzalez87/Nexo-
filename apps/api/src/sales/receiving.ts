@@ -20,6 +20,7 @@ import {
   packOfferText,
   resolveConfirmation,
 } from "./confirmations.js";
+import { takeHumanControl } from "./human-control.js";
 
 export async function receiveMessage(
   context: SalesContext,
@@ -368,6 +369,60 @@ export async function receiveMessage(
       conversation.state === "WON"
     )
       return { conversationId: conversation.id };
+    if (
+      /\b(?:me jodes|no me jodas|me estas cargando|lpm|la puta madre)\b/.test(
+        query,
+      )
+    ) {
+      const pendingPayment = await tx.payment.findFirst({
+        where: {
+          workspaceId,
+          conversationId: conversation.id,
+          status: "PENDING",
+        },
+        select: { id: true },
+      });
+      await takeHumanControl(tx, workspaceId, conversation);
+      await tx.notification.create({
+        data: {
+          workspaceId,
+          text: `${input.contact} expresa frustración; el asistente quedó en pausa para revisión humana.`,
+        },
+      });
+      await handoff(
+        pendingPayment
+          ? "Perdón, veo que no te estoy ayudando. Pauso el asistente y el equipo revisará tu comprobante; todavía no se confirmó el pago."
+          : "Perdón, veo que no te estoy ayudando. Pauso el asistente y paso tu caso al equipo. No me aparece un comprobante registrado y no se confirmó ningún pago.",
+      );
+      return { conversationId: conversation.id };
+    }
+    if (
+      /\b(?:ya (?:(?:t|te|me) )?(?:envie|mande|pase|transferi)|(?:comprobante|transferencia) (?:enviado|enviada|mandado|hecha)|ya pague|recibiste (?:el )?comprobante)\b/.test(
+        query,
+      )
+    ) {
+      const pendingPayment = await tx.payment.findFirst({
+        where: {
+          workspaceId,
+          conversationId: conversation.id,
+          status: "PENDING",
+        },
+        select: { id: true },
+      });
+      await takeHumanControl(tx, workspaceId, conversation);
+      await tx.notification.create({
+        data: {
+          workspaceId,
+          text: `El cliente avisa que envió un comprobante. Revisá la conversación ${input.contact}; no se aprobó ningún pago.`,
+        },
+      });
+      await handoff(
+        pendingPayment
+          ? "Gracias por avisar. El comprobante está pendiente de revisión humana; todavía no se confirmó el pago."
+          : "Gracias por avisar. No me aparece un comprobante adjunto en este mensaje, así que todavía no puedo registrarlo ni confirmar el pago. El equipo revisará la conversación; si podés, reenviá la imagen o el PDF.",
+      );
+      return { conversationId: conversation.id };
+    }
     if (/\b(humano|asesor|persona|operador)\b/.test(query)) {
       await tx.conversation.update({
         where: { id: conversation.id },

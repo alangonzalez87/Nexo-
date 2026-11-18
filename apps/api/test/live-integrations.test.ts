@@ -860,6 +860,67 @@ test("missing media pauses for humans, ambiguous send is not retried automatical
   assert.equal(sends().length, count);
 });
 
+test("terminal image webhook failures are recorded as manual review instead of being dropped", async () => {
+  const customer = "5491100000091@c.us";
+  await receive("CURSOIA", { chatId: customer });
+  await receive("1", { chatId: customer });
+  const paymentCountBefore = await db.payment.count({
+    where: { workspaceId, conversation: { contact: customer } },
+  });
+  const originalReceive = ctx.sales.receive.bind(ctx.sales);
+  ctx.sales.receive = (async (targetWorkspaceId: string, input: any) => {
+    if (input.media) throw new Error("simulated transient media failure");
+    return originalReceive(targetWorkspaceId, input);
+  }) as typeof ctx.sales.receive;
+  try {
+    const payload = event("", randomUUID(), {
+      chatId: customer,
+      type: "image",
+      media: {
+        mimetype: "image/png",
+        data: imageFixture().toString("base64"),
+      },
+    });
+    const accepted = await webhook(payload);
+    assert.equal(accepted.statusCode, 202, accepted.body);
+    const inboxId = accepted.json().id;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await ctx.webhooks.process(workspaceId);
+      const item = await db.webhookInbox.findUniqueOrThrow({
+        where: { id: inboxId },
+      });
+      if (item.status === "DONE") break;
+      await db.webhookInbox.update({
+        where: { id: inboxId },
+        data: { nextAttemptAt: new Date(0) },
+      });
+    }
+    ctx.sales.receive = originalReceive;
+    const item = await db.webhookInbox.findUniqueOrThrow({
+      where: { id: inboxId },
+    });
+    assert.equal(item.status, "DONE");
+    const chat = await db.conversation.findFirstOrThrow({
+      where: { workspaceId, contact: customer },
+      include: { payments: true, messages: true },
+    });
+    assert.equal(chat.paused, true);
+    assert.equal(chat.humanControlled, true);
+    assert.equal(chat.payments.length, paymentCountBefore);
+    await ctx.sales.dispatch(workspaceId);
+    assert.ok(
+      sends().some(
+        (call) =>
+          call.body.chatId === customer &&
+          call.body.text.includes("no pudimos descargarlo") &&
+          call.body.text.includes("no está aprobado"),
+      ),
+    );
+  } finally {
+    ctx.sales.receive = originalReceive;
+  }
+});
+
 test("simulation override never enables real integration even with saved credentials", async () => {
   const demo = await buildApp(db, { ...config, forceSimulation: true });
   try {
