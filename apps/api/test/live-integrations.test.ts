@@ -252,6 +252,7 @@ after(async () => {
   await new Promise<void>((resolve) => gateway.close(() => resolve()));
   if (storage) await rm(storage, { recursive: true, force: true });
 });
+
 const request = (method: "GET" | "POST" | "PUT", url: string, payload?: any) =>
   ctx.app.inject({ method, url, payload, headers });
 function event(
@@ -1405,7 +1406,7 @@ test("photo outbox uses send-image once and ambiguous failures require review", 
   assert.equal(images().length, 2);
 });
 
-test("live cutoff preserves old queues and disables payment automation while new WhatsApp replies work", async () => {
+test("live cutoff preserves historical queues while new receipts await manual Nexo review", async () => {
   const user = await seed(
     db,
     `go-live-${randomUUID()}@nexo.local`,
@@ -1416,13 +1417,20 @@ test("live cutoff preserves old queues and disables payment automation while new
   config.preview = false;
   config.automationCutoffAt = cutoff;
   config.paymentAutomationEnabled = false;
+  config.paymentWorkflowEnabled = true;
+  config.automaticReceiptVerificationEnabled = false;
   await ctx.integrations.save(workspaceId, {
     ...savedConfig,
     aiProvider: "rules",
     openaiKey: undefined,
   });
-  const product = await db.product.findFirstOrThrow({
-    where: { workspaceId },
+  const product = await db.product.update({
+    where: {
+      id: (
+        await db.product.findFirstOrThrow({ where: { workspaceId } })
+      ).id,
+    },
+    data: { receiptMode: "MANUAL" },
   });
   const connection = await db.connection.create({
     data: {
@@ -1435,7 +1443,7 @@ test("live cutoff preserves old queues and disables payment automation while new
   });
   const contact = "5491100000101@c.us";
   const oldContact = "5491100000102@c.us";
-  await db.conversation.create({
+  const testConversation = await db.conversation.create({
     data: {
       workspaceId,
       connectionId: connection.id,
@@ -1526,22 +1534,37 @@ test("live cutoff preserves old queues and disables payment automation while new
     text: "quiero comprar",
   });
   await ctx.sales.dispatch(workspaceId);
-
-  const updatedConversation = await db.conversation.findUniqueOrThrow({
-    where: {
-      workspaceId_connectionId_contact: {
-        workspaceId,
-        connectionId: connection.id,
-        contact,
-      },
+  const receipt = await ctx.sales.receive(workspaceId, {
+    connectionId: connection.id,
+    eventId: randomUUID(),
+    contact,
+    text: "",
+    media: {
+      data: pdfFixture(`New receipt ${randomUUID()}`),
+      name: "new-receipt.pdf",
     },
   });
+  await ctx.sales.verifyPendingReceipts(workspaceId);
+  await ctx.sales.dispatch(workspaceId);
+
+  const updatedConversation = await db.conversation.findUniqueOrThrow({
+    where: { id: testConversation.id },
+  });
   assert.ok(updatedConversation);
-  assert.equal(updatedConversation.humanControlled, true);
-  assert.equal(updatedConversation.state, "HUMAN");
+  assert.equal(updatedConversation.humanControlled, false);
+  assert.equal(updatedConversation.state, "REVIEW");
+  assert.ok(receipt.paymentId);
+  const newPayment = await db.payment.findUniqueOrThrow({
+    where: {
+      workspaceId_id: { workspaceId, id: receipt.paymentId! },
+    },
+  });
+  assert.equal(newPayment.status, "PENDING");
+  assert.equal(newPayment.receiptMode, "MANUAL");
+  assert.equal(newPayment.receiptCheckStatus, "NOT_RUN");
   assert.equal(
     await db.payment.count({ where: { workspaceId, status: "PENDING" } }),
-    1,
+    2,
   );
   assert.equal(
     (await db.message.findUniqueOrThrow({ where: { id: oldMessage.id } }))
@@ -1554,11 +1577,13 @@ test("live cutoff preserves old queues and disables payment automation while new
         call.url.endsWith("/send-text") && call.body.chatId === contact,
     )
     .map((call) => call.body.text);
-  assert.ok(customerReplies.length >= 1);
-  assert.ok(customerReplies.some((text) => text.includes("desactivados")));
+  assert.ok(customerReplies.length >= 2);
   assert.ok(
-    customerReplies.every(
-      (text) => !text.includes("demo.nexo.ventas") && !text.includes("alias"),
+    customerReplies.some((text) => text.includes("Alias: demo.nexo.ventas")),
+  );
+  assert.ok(
+    customerReplies.some((text) =>
+      text.includes("verificar manualmente antes de confirmar el pago"),
     ),
   );
 });

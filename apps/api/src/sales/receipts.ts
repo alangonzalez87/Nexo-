@@ -295,13 +295,20 @@ export class ReceiptService {
     }
   }
   async verifyReceipt(workspaceId: string, paymentId: string) {
-    if (this.context.config.paymentAutomationEnabled === false) return;
+    if (
+      this.context.config.paymentAutomationEnabled === false ||
+      this.context.config.automaticReceiptVerificationEnabled === false
+    )
+      return;
     const payment = await this.context.db.payment.findFirst({
       where: {
         workspaceId,
         id: paymentId,
         status: "PENDING",
         receiptMode: "AUTO_RECEIPT",
+        ...(this.context.config.automationCutoffAt
+          ? { createdAt: { gte: this.context.config.automationCutoffAt } }
+          : {}),
       },
       include: { conversation: { include: { product: true } } },
     });
@@ -435,12 +442,19 @@ export class ReceiptService {
     }
   }
   async verifyPendingReceipts(workspaceId: string) {
-    if (this.context.config.paymentAutomationEnabled === false) return;
+    if (
+      this.context.config.paymentAutomationEnabled === false ||
+      this.context.config.automaticReceiptVerificationEnabled === false
+    )
+      return;
     const payments = await this.context.db.payment.findMany({
       where: {
         workspaceId,
         status: "PENDING",
         receiptMode: "AUTO_RECEIPT",
+        ...(this.context.config.automationCutoffAt
+          ? { createdAt: { gte: this.context.config.automationCutoffAt } }
+          : {}),
         conversation: {
           humanControlled: false,
           product: { is: { active: true, agentEnabled: true } },

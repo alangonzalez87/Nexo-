@@ -175,7 +175,7 @@ export class WebhookService {
           workspace.approvalPhone &&
           senderPhone === workspace.approvalPhone
         ) {
-          if (runtime.paymentAutomationEnabled === false) {
+          if (runtime.paymentWorkflowEnabled === false) {
             await this.db.webhookInbox.update({
               where: { id: item.id },
               data: {
@@ -301,11 +301,12 @@ export class WebhookService {
         });
         if (
           received.paymentId &&
-          runtime.paymentAutomationEnabled !== false
+          runtime.paymentAutomationEnabled !== false &&
+          runtime.automaticReceiptVerificationEnabled !== false
         )
           await this.sales.verifyReceipt(workspaceId, received.paymentId);
         if (
-          runtime.paymentAutomationEnabled !== false &&
+          runtime.paymentWorkflowEnabled !== false &&
           media &&
           (m.type === "image" || m.type === "document")
         ) {

@@ -76,6 +76,10 @@ export class OutboxService {
     this.lastRemarketingScan.set(workspaceId, Date.now());
     return this.context.locked(workspaceId, async (tx) => {
       const now = new Date();
+      const reminderCutoff = Math.max(
+        now.getTime() - 23 * 3600000,
+        runtime.automationCutoffAt?.getTime() || 0,
+      );
       const recent = await tx.message.findFirst({
         where: {
           workspaceId,
@@ -91,7 +95,7 @@ export class OutboxService {
           state: "AWAITING_PAYMENT",
           paused: false,
           marketingOptOutAt: null,
-          updatedAt: { gte: new Date(now.getTime() - 23 * 3600000) },
+          updatedAt: { gte: new Date(reminderCutoff) },
           product: {
             is: { active: true, agentEnabled: true, remarketingEnabled: true },
           },
@@ -138,7 +142,7 @@ export class OutboxService {
           ...(runtime.automationCutoffAt
             ? { createdAt: { gte: runtime.automationCutoffAt } }
             : {}),
-          ...(runtime.paymentAutomationEnabled === false
+          ...(runtime.paymentWorkflowEnabled === false
             ? { origin: { not: "PAYMENT" } }
             : {}),
         },

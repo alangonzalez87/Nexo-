@@ -28,7 +28,10 @@ export async function receiveMessage(
 ) {
   const runtime =
     (await context.integrations?.resolve(workspaceId)) || context.config;
-  const paymentsAutomated = runtime.paymentAutomationEnabled !== false;
+  const paymentsEnabled = runtime.paymentWorkflowEnabled !== false;
+  const automaticReceiptVerificationEnabled =
+    runtime.paymentAutomationEnabled !== false &&
+    runtime.automaticReceiptVerificationEnabled !== false;
   const selector =
     context.selector ||
     (runtime.aiProvider === "openai" && runtime.openaiKey
@@ -119,7 +122,7 @@ export async function receiveMessage(
       enabled: boolean,
       imageId?: string | null,
     ) =>
-      !paymentsAutomated
+      !paymentsEnabled
         ? respond(
             "Gracias por tu interés. El equipo te indicará cómo continuar; los pagos por WhatsApp están desactivados por el momento.",
           )
@@ -263,7 +266,7 @@ export async function receiveMessage(
       });
       if (!conversation.humanControlled)
         await handoff(
-          paymentsAutomated
+          paymentsEnabled
             ? "Recibimos un aviso de archivo, pero no pudimos descargarlo. El equipo revisará el caso; el pago no está aprobado."
             : "No pudimos descargar el archivo. El equipo lo revisará manualmente; no se procesó ningún pago.",
         );
@@ -272,7 +275,7 @@ export async function receiveMessage(
     if (asset) {
       if (conversation.state === "WON")
         return { conversationId: conversation.id };
-      if (!paymentsAutomated) {
+      if (!paymentsEnabled) {
         await tx.conversation.update({
           where: { id: conversation.id },
           data: { paused: true, humanControlled: true, state: "HUMAN" },
@@ -331,14 +334,14 @@ export async function receiveMessage(
       await tx.notification.create({
         data: {
           workspaceId,
-          text: `Comprobante recibido de ${input.contact}. ${receiptMode === "AUTO_RECEIPT" ? "Análisis automático pendiente." : "Requiere revisión manual."}`,
+          text: `Comprobante recibido de ${input.contact}. ${receiptMode === "AUTO_RECEIPT" && automaticReceiptVerificationEnabled ? "Análisis automático pendiente." : "Requiere revisión manual."}`,
         },
       });
       if (!conversation.humanControlled)
         await respond(
-          receiptMode === "AUTO_RECEIPT"
+          receiptMode === "AUTO_RECEIPT" && automaticReceiptVerificationEnabled
             ? "Recibimos tu archivo. Vamos a revisar los datos del comprobante; si no son claros, el equipo lo revisará manualmente."
-            : "Recibimos tu archivo. El equipo revisará el comprobante manualmente; todavía no está aprobado.",
+            : "Recibimos tu comprobante. El equipo lo va a verificar manualmente antes de confirmar el pago.",
         );
       return {
         conversationId: conversation.id,
@@ -468,14 +471,14 @@ export async function receiveMessage(
             quotedPriceCents: selected.priceCents,
             quotedCurrency: product.currency,
             state:
-              paymentsAutomated && workspace.paymentAlias
+              paymentsEnabled && workspace.paymentAlias
                 ? "AWAITING_PAYMENT"
                 : "QUALIFIED",
           },
         });
         await respondPaymentDetails(
           workspace.paymentAlias
-            ? `Elegiste el Pack ${selected.number}: ${selected.name}. ${selected.summary}\nImporte: ${money(selected.priceCents, product.currency)}.\nAlias: ${workspace.paymentAlias}\n${workspace.paymentInstructions}\nEnviá el comprobante en imagen o PDF. ${product.receiptMode === "AUTO_RECEIPT" ? "Analizaremos sus datos para habilitar el pack." : "Lo revisaremos antes de entregarte el pack."}`
+            ? `Elegiste el Pack ${selected.number}: ${selected.name}. ${selected.summary}\nImporte: ${money(selected.priceCents, product.currency)}.\nAlias: ${workspace.paymentAlias}\n${workspace.paymentInstructions}\nEnviá el comprobante en imagen o PDF. ${product.receiptMode === "AUTO_RECEIPT" && automaticReceiptVerificationEnabled ? "Analizaremos sus datos para habilitar el pack." : "El equipo verificará el comprobante manualmente antes de confirmar el pago."}`
             : `Elegiste el Pack ${selected.number}: ${selected.name}. El equipo todavía no configuró los datos de pago. Escribí «humano».`,
           !!workspace.paymentAlias && product.remarketingEnabled,
           selected.imageId,
@@ -536,7 +539,7 @@ export async function receiveMessage(
         return { conversationId: conversation.id };
       }
       if (!conversation.selectedPackNumber && purchaseIntent(query)) {
-        if (!paymentsAutomated) {
+        if (!paymentsEnabled) {
           await tx.conversation.update({
             where: { id: conversation.id },
             data: { paused: true, humanControlled: true, state: "HUMAN" },
@@ -561,7 +564,7 @@ export async function receiveMessage(
       }
     }
     if (purchaseIntent(query)) {
-      if (!paymentsAutomated) {
+      if (!paymentsEnabled) {
         await tx.conversation.update({
           where: { id: conversation.id },
           data: { paused: true, humanControlled: true, state: "HUMAN" },
@@ -589,7 +592,7 @@ export async function receiveMessage(
         },
       });
       await respondPaymentDetails(
-        `Para comprar ${conversation.selectedPackName ? `Pack ${conversation.selectedPackNumber}: ${conversation.selectedPackName}` : product.name}, transferí ${money(conversation.quotedPriceCents ?? product.priceCents, conversation.quotedCurrency ?? product.currency)}.\nAlias: ${workspace.paymentAlias}\n${workspace.paymentInstructions}\nEnviá el comprobante en imagen o PDF. ${product.receiptMode === "AUTO_RECEIPT" ? "Analizaremos sus datos para habilitar el curso." : "La aprobación es manual."}`,
+        `Para comprar ${conversation.selectedPackName ? `Pack ${conversation.selectedPackNumber}: ${conversation.selectedPackName}` : product.name}, transferí ${money(conversation.quotedPriceCents ?? product.priceCents, conversation.quotedCurrency ?? product.currency)}.\nAlias: ${workspace.paymentAlias}\n${workspace.paymentInstructions}\nEnviá el comprobante en imagen o PDF. ${product.receiptMode === "AUTO_RECEIPT" && automaticReceiptVerificationEnabled ? "Analizaremos sus datos para habilitar el curso." : "El equipo verificará el comprobante manualmente antes de confirmar el pago."}`,
         product.remarketingEnabled,
       );
     } else {

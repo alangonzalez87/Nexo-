@@ -14,6 +14,7 @@ export function startWorker(
     intervalMs: number;
     onError: (workspaceId?: string) => void;
     paymentAutomationEnabled?: boolean;
+    automaticReceiptVerificationEnabled?: boolean;
   },
 ) {
   let pending: Promise<void> | undefined;
@@ -24,7 +25,8 @@ export function startWorker(
         try {
           await services.webhooks.process(workspace.id);
           if (options.paymentAutomationEnabled !== false) {
-            await services.sales.verifyPendingReceipts(workspace.id);
+            if (options.automaticReceiptVerificationEnabled !== false)
+              await services.sales.verifyPendingReceipts(workspace.id);
             await services.sales.queueDueRemarketing(workspace.id);
           }
           await services.sales.dispatchBatch(workspace.id);

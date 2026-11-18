@@ -22,6 +22,8 @@ export interface Config {
   automaticOwnMessages?: string[];
   automationCutoffAt?: Date;
   paymentAutomationEnabled?: boolean;
+  paymentWorkflowEnabled?: boolean;
+  automaticReceiptVerificationEnabled?: boolean;
 }
 export function configFromEnv(): Config {
   const preview = process.env.NEXO_PREVIEW === "true";
@@ -53,6 +55,10 @@ export function configFromEnv(): Config {
     automationCutoffAt,
     paymentAutomationEnabled:
       process.env.PAYMENT_AUTOMATION_ENABLED !== "false",
+    paymentWorkflowEnabled:
+      process.env.PAYMENT_WORKFLOW_ENABLED !== "false",
+    automaticReceiptVerificationEnabled:
+      process.env.AUTOMATIC_RECEIPT_VERIFICATION_ENABLED !== "false",
     storageDir: resolve(process.env.STORAGE_DIR || "../../.data/private"),
     publicUrl,
     openwaWebhookBaseUrl,

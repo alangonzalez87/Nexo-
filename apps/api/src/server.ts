@@ -24,6 +24,8 @@ const stopWorker = config.preview || !config.automationCutoffAt
         intervalMs: 3000,
         paymentAutomationEnabled:
           config.paymentAutomationEnabled === true,
+        automaticReceiptVerificationEnabled:
+          config.automaticReceiptVerificationEnabled === true,
         onError: (workspaceId) =>
           console.error(
             workspaceId
