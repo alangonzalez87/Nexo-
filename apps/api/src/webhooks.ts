@@ -336,8 +336,39 @@ export class WebhookService {
           payload: { event: payload.event },
         },
       });
-    } catch {
+    } catch (error) {
       const terminal = item.attempts >= 4;
+      const diagnostic =
+        error && typeof error === "object"
+          ? (error as {
+              name?: unknown;
+              code?: unknown;
+              statusCode?: unknown;
+              cause?: { code?: unknown };
+            })
+          : {};
+      const errorName =
+        typeof diagnostic.name === "string" &&
+        /^[a-z0-9_]+$/i.test(diagnostic.name)
+          ? diagnostic.name
+          : "Error";
+      const errorCode =
+        typeof diagnostic.code === "string" &&
+        /^[a-z0-9_-]{1,40}$/i.test(diagnostic.code)
+          ? diagnostic.code
+        : typeof diagnostic.cause?.code === "string" &&
+            /^[a-z0-9_-]{1,40}$/i.test(diagnostic.cause.code)
+          ? diagnostic.cause.code
+          : undefined;
+      const statusCode =
+        typeof diagnostic.statusCode === "number" &&
+        diagnostic.statusCode >= 100 &&
+        diagnostic.statusCode <= 599
+          ? diagnostic.statusCode
+          : undefined;
+      console.error(
+        `Webhook processing failed: ${errorName}${errorCode ? `/${errorCode}` : ""}${statusCode ? ` HTTP ${statusCode}` : ""}`,
+      );
       await this.db.webhookInbox.update({
         where: { id: item.id },
         data: {

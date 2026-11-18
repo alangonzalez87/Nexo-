@@ -621,8 +621,8 @@ test("phone sent events pause at ingress, deduplicate, ignore system echoes and 
     false,
   );
 });
-test("receipts arriving during human control are recorded silently and never auto-approved", async () => {
-  const f = await fixture("AUTO_RECEIPT");
+test("manual receipt acknowledgement is delivered during human control without auto-approval", async () => {
+  const f = await fixture("MANUAL");
   const c = await f.send("silent-receipt", "PRUEBA");
   await f.send("silent-receipt", "1");
   await f.sales.human(f.workspaceId, c.conversationId, "Ya te ayudo");
@@ -635,11 +635,21 @@ test("receipts arriving during human control are recorded silently and never aut
     pdfFixture("human handled receipt"),
   );
   await f.sales.verifyReceipt(f.workspaceId, result.paymentId!);
+  await f.sales.dispatch(f.workspaceId);
+  const acknowledgment = await db.message.findFirstOrThrow({
+    where: {
+      conversationId: c.conversationId,
+      externalId: { startsWith: "receipt-ack:" },
+    },
+  });
+  assert.equal(acknowledgment.status, "SENT");
+  assert.equal(acknowledgment.origin, "PAYMENT");
+  assert.match(acknowledgment.text, /verificar manualmente/i);
   assert.equal(
     await db.message.count({
       where: { conversationId: c.conversationId, direction: "OUT" },
     }),
-    before,
+    before + 1,
   );
   assert.equal(
     (await db.payment.findUniqueOrThrow({ where: { id: result.paymentId } }))
@@ -664,7 +674,7 @@ test("receipts arriving during human control are recorded silently and never aut
     await db.message.count({
       where: { conversationId: c.conversationId, direction: "OUT" },
     }),
-    before,
+    before + 1,
   );
 });
 test("already delivered approval records payment and fingerprint without any send or delivery token", async () => {

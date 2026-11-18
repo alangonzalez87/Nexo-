@@ -337,11 +337,24 @@ export async function receiveMessage(
           text: `Comprobante recibido de ${input.contact}. ${receiptMode === "AUTO_RECEIPT" && automaticReceiptVerificationEnabled ? "Análisis automático pendiente." : "Requiere revisión manual."}`,
         },
       });
-      if (!conversation.humanControlled)
+      if (
+        receiptMode === "MANUAL" ||
+        !automaticReceiptVerificationEnabled
+      ) {
+        // A receipt acknowledgement is transactional, not an assistant reply.
+        // Keep it deliverable while a human owns the conversation.
+        await context.outgoing(
+          tx,
+          workspaceId,
+          conversation.id,
+          "Recibimos tu comprobante. El equipo lo va a verificar manualmente antes de confirmar el pago.",
+          `receipt-ack:${eventKey}`,
+          undefined,
+          "PAYMENT",
+        );
+      } else if (!conversation.humanControlled)
         await respond(
-          receiptMode === "AUTO_RECEIPT" && automaticReceiptVerificationEnabled
-            ? "Recibimos tu archivo. Vamos a revisar los datos del comprobante; si no son claros, el equipo lo revisará manualmente."
-            : "Recibimos tu comprobante. El equipo lo va a verificar manualmente antes de confirmar el pago.",
+          "Recibimos tu archivo. Vamos a revisar los datos del comprobante; si no son claros, el equipo lo revisará manualmente.",
         );
       return {
         conversationId: conversation.id,
