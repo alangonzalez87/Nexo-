@@ -40,8 +40,14 @@ const gateway = createServer(async (req, res) => {
   }
   if (req.url?.endsWith("/qr"))
     return res.end(JSON.stringify({ qrCode: "data:image/png;base64,fixture" }));
-  if (req.url?.startsWith("/api/sessions/") && req.method === "GET")
-    return res.end(JSON.stringify({ id: sessions[0].id, status: sessions[0].status }));
+  if (req.url?.startsWith("/api/sessions/") && req.method === "GET") {
+    const session = sessions.find((item) =>
+      req.url?.startsWith(`/api/sessions/${item.id}`),
+    );
+    return res.end(
+      JSON.stringify({ id: session?.id || sessions[0].id, status: session?.status || sessions[0].status }),
+    );
+  }
   res.statusCode = 404;
   return res.end(JSON.stringify({ error: "not found" }));
 });
@@ -169,6 +175,19 @@ test("OpenWA setup replaces disabled legacy credentials, preserves old rows and 
     remainingLegacy.map((row) => row.status),
     ["DISCONNECTED", "DISCONNECTED"],
   );
+  const historicalAction = await ctx.app.inject({
+    method: "POST",
+    url: `/api/connections/${remainingLegacy[0].id}/prepare-qr`,
+    headers: adminHeaders,
+  });
+  assert.equal(historicalAction.statusCode, 409);
+  assert.match(historicalAction.json().error, /conexión histórica/i);
+  const historicalConnect = await ctx.app.inject({
+    method: "POST",
+    url: `/api/connections/${remainingLegacy[0].id}/connect`,
+    headers: adminHeaders,
+  });
+  assert.equal(historicalConnect.statusCode, 409);
   assert.deepEqual(subscriptions[0].events, ["session.status", "session.disconnected"]);
   assert.equal(subscriptions[0].url, `http://nexo.railway.internal:8080/api/webhooks/openwa/${workspaceId}`);
   const connection = await db.connection.findFirstOrThrow({
@@ -221,4 +240,67 @@ test("OpenWA setup replaces disabled legacy credentials, preserves old rows and 
     payload: {},
   });
   assert.equal(deniedPayment.statusCode, 403);
+});
+
+test("managed setup repairs one stale connection link after validating the scoped session", async () => {
+  const managedSession = {
+    id: randomUUID(),
+    name: "managed repair fixture",
+    status: "qr_ready",
+  };
+  sessions.push(managedSession);
+  assert.ok(managedSession?.id);
+  const admin = await db.user.findUniqueOrThrow({
+    where: { email: "admin@nexo.local" },
+  });
+  const workspace = await db.workspace.create({
+    data: { name: "Managed session repair fixture" },
+  });
+  await db.membership.create({
+    data: { userId: admin.id, workspaceId: workspace.id, role: "ADMIN" },
+  });
+  const stale = await db.connection.create({
+    data: {
+      workspaceId: workspace.id,
+      name: "WhatsApp del negocio",
+      provider: "OPENWA",
+      sessionId: randomUUID(),
+      status: "DISCONNECTED",
+    },
+  });
+  const conversation = await db.conversation.create({
+    data: {
+      workspaceId: workspace.id,
+      connectionId: stale.id,
+      contact: "5491112345678@c.us",
+    },
+  });
+  await ctx.integrations.saveManaged(
+    workspace.id,
+    "scoped-fixture-key",
+    managedSession.id,
+  );
+  const sessionCount = sessions.length;
+  const result = await ctx.app.inject({
+    method: "POST",
+    url: "/api/connections/managed",
+    headers: { ...adminHeaders, "x-workspace-id": workspace.id },
+    payload: {},
+  });
+  assert.equal(result.statusCode, 200, result.body);
+  assert.equal(sessions.length, sessionCount);
+  const repaired = await db.connection.findUniqueOrThrow({
+    where: { id: stale.id },
+  });
+  assert.equal(repaired.sessionId, managedSession.id);
+  assert.equal(repaired.status, "QR_READY");
+  const retainedConversation = await db.conversation.findUniqueOrThrow({
+    where: { id: conversation.id },
+  });
+  assert.equal(retainedConversation.connectionId, stale.id);
+  assert.ok(
+    subscriptions.some((item) =>
+      item.url.endsWith(`/api/webhooks/openwa/${workspace.id}`),
+    ),
+  );
 });

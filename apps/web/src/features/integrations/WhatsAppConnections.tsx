@@ -78,24 +78,33 @@ export function WhatsAppConnections(
               <p className="muted">No hay ningún WhatsApp configurado.</p>
             )}
             {connections.map((c) => {
+              // A managed Railway key is scoped to one session. Imported local
+              // connections stay visible for their history, but must not offer
+              // controls that will inevitably fail with OpenWA 403.
+              const managedSession =
+                !config.managed || c.sessionId === config.managedSessionId;
               const usableInSetup =
-                !config.openwaSetupMode ||
-                (config.managed && c.sessionId === config.managedSessionId);
+                managedSession &&
+                (!config.openwaSetupMode || config.managed);
               return (
               <div className="integration-session" key={c.id}>
                 <h3>{c.name}</h3>
-                {config.openwaSetupMode && !usableInSetup && (
+                {config.managed && !managedSession && (
                   <p className="muted">
-                    Esta conexión importada se conserva, pero no pertenece a la sesión de OpenWA de Railway.
+                    Conexión histórica conservada. OpenWA de Railway no tiene acceso a esta sesión.
                   </p>
                 )}
                 <p>
+                  {!managedSession ? (
+                    <span className="badge connection-status">HISTÓRICA</span>
+                  ) : (
                   <span className={`badge connection-status ${(statusLoaded ? liveStatuses[c.id]?.status || "UNAVAILABLE" : "CHECKING").toLowerCase()}`}>
                     {connectionStatusName(statusLoaded ? liveStatuses[c.id]?.status || "UNAVAILABLE" : "CHECKING")}
                   </span>
+                  )}
                   {liveStatuses[c.id]?.phone && ` · +${liveStatuses[c.id].phone}`}
                 </p>
-                <p className="muted">{connectionStatusDetail(statusLoaded ? liveStatuses[c.id]?.status || "UNAVAILABLE" : "CHECKING")}</p>
+                {managedSession && <p className="muted">{connectionStatusDetail(statusLoaded ? liveStatuses[c.id]?.status || "UNAVAILABLE" : "CHECKING")}</p>}
                 <div className="integration-actions">
                   {usableInSetup && (
                   <button
@@ -120,7 +129,7 @@ export function WhatsAppConnections(
                       Mostrar QR
                     </button>
                   )}
-                  {!config.openwaSetupMode && canStopConnection(statusLoaded ? liveStatuses[c.id]?.status || "UNAVAILABLE" : "CHECKING") && (
+                  {!config.openwaSetupMode && managedSession && canStopConnection(statusLoaded ? liveStatuses[c.id]?.status || "UNAVAILABLE" : "CHECKING") && (
                     <button
                       className="secondary disconnect-button"
                       disabled={busy}

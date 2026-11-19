@@ -12,6 +12,19 @@ export function registerConnectionRoutes(
   app: FastifyInstance,
   { db, integrations, managedOpenwa, scope, setupAdmin, config }: Pick<RouteContext, "db" | "integrations" | "managedOpenwa" | "scope" | "setupAdmin" | "config">,
 ) {
+  async function assertManagedSession(workspaceId: string, sessionId: string) {
+    const runtime = (await integrations.resolve(workspaceId)) as Config & {
+      managed?: boolean;
+      managedSessionId?: string;
+    };
+    if (runtime.managed && runtime.managedSessionId !== sessionId)
+      throw new HttpError(
+        409,
+        "Esta es una conexión histórica. Usá la sesión WhatsApp del negocio vinculada a Railway.",
+      );
+    return runtime;
+  }
+
   app.get("/api/connections", async (req) =>
     db.connection.findMany({
       where: { workspaceId: await scope(req) },
@@ -128,10 +141,8 @@ export function registerConnectionRoutes(
     });
     if (config.openwaSetupMode && connection.provider !== "OPENWA")
       throw new HttpError(409, "En preparación sólo se habilitan sesiones OpenWA.");
-    const result = await adapterFor(
-      connection.provider,
-      await integrations.resolve(workspaceId),
-    ).connect(connection);
+    const runtime = await assertManagedSession(workspaceId, connection.sessionId);
+    const result = await adapterFor(connection.provider, runtime).connect(connection);
     await db.connection.update({
       where: { id: connection.id },
       data: { status: result.status },
@@ -144,8 +155,9 @@ export function registerConnectionRoutes(
       where: { workspaceId, id: idParam(req), provider: "OPENWA" },
     });
     if (!connection) throw new HttpError(404, "WhatsApp no encontrado.");
+    const runtime = await assertManagedSession(workspaceId, connection.sessionId);
     const result = await new OpenWAAdapter(
-      await integrations.resolve(workspaceId),
+      runtime,
     ).stop(connection);
     await db.connection.update({
       where: { id: connection.id },
@@ -160,8 +172,9 @@ export function registerConnectionRoutes(
       where: { workspaceId, id: idParam(req), provider: "OPENWA" },
     });
     if (!connection) throw new HttpError(404, "Conexión OpenWA no encontrada.");
+    const runtime = await assertManagedSession(workspaceId, connection.sessionId);
     const result = await new OpenWAAdapter(
-      await integrations.resolve(workspaceId),
+      runtime,
     ).prepareQr(connection);
     await db.connection.update({
       where: { id: connection.id },

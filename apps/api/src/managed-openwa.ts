@@ -48,9 +48,25 @@ export class ManagedOpenWA {
           const managedSessionId = (
             runtime as Config & { managedSessionId?: string }
           ).managedSessionId;
-          const connection =
-            connections.find((item) => item.sessionId === managedSessionId) ||
-            (connections.length === 1 ? connections[0] : undefined);
+          let connection = connections.find(
+            (item) => item.sessionId === managedSessionId,
+          );
+          if (!connection && managedSessionId && connections.length === 1) {
+            const current = connections[0];
+            // Validate access to the managed session before repairing a stale
+            // local link. Preserve the connection row so its conversations stay attached.
+            const live = await new OpenWAAdapter(runtime).status({
+              ...current,
+              sessionId: managedSessionId,
+            });
+            connection = await this.db.connection.update({
+              where: { id: current.id },
+              data: {
+                sessionId: managedSessionId,
+                status: live.status,
+              },
+            });
+          }
           if (connection) {
             await new OpenWAAdapter(runtime).registerWebhook(
               connection,

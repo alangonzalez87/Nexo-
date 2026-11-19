@@ -4,6 +4,7 @@ import { z } from "zod";
 import { HttpError } from "../security.js";
 import { OpenWAAdapter } from "../messaging.js";
 import { idParam } from "./context.js";
+import type { Config } from "../config.js";
 
 
 export function registerWebhookRoutes(
@@ -18,6 +19,15 @@ export function registerWebhookRoutes(
       where: { workspaceId, id: idParam(req), provider: "OPENWA" },
     });
     if (!connection) throw new HttpError(404, "Conexión OpenWA no encontrada.");
+    const managed = runtime as Config & {
+      managed?: boolean;
+      managedSessionId?: string;
+    };
+    if (managed.managed && managed.managedSessionId !== connection.sessionId)
+      throw new HttpError(
+        409,
+        "Esta es una conexión histórica. Usá la sesión WhatsApp del negocio vinculada a Railway.",
+      );
     return new OpenWAAdapter(runtime).registerWebhook(
       connection,
       `${(runtime.openwaWebhookBaseUrl || runtime.publicUrl).replace(/\/$/, "")}/api/webhooks/openwa/${workspaceId}`,
