@@ -200,17 +200,29 @@
 }
 .inbox {
   display: grid;
-  grid-template-columns: 280px 1fr;
-  min-height: 680px;
+  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
   border: 1px solid #e1e8e2;
   border-radius: 11px;
   overflow: hidden;
   background: #fff;
 }
 .conversation-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   border-right: 1px solid #e5ebe4;
 }
+.conversation-items {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
 .list-heading {
+  flex: none;
   padding: 20px 15px 0;
 }
 .list-heading h3 {
@@ -281,30 +293,51 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
 }
 .chat-header {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 12px;
   padding: 18px 22px;
   border-bottom: 1px solid #e6ece6;
 }
-.chat-header > div {
+.chat-back {
+  display: none;
+}
+.chat-contact {
   flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.chat-contact small {
+  display: block;
+}
+.chat-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
 }
 .chat-header h3 {
-  font-size: 12px;
+  font-size: 14px;
 }
 .chat-header .secondary {
   padding: 8px 11px;
   font-size: 10px;
 }
 .chat-header small {
-  font-size: 9px;
+  font-size: 10px;
+}
+.chat-panel > form {
+  flex: none;
 }
 .messages {
-  height: 340px;
+  flex: 1;
+  min-height: 0;
   overflow: auto;
+  overscroll-behavior-y: contain;
   background: #f7f9f5;
   padding: 22px;
   display: flex;
@@ -312,6 +345,7 @@
   gap: 12px;
 }
 .bubble {
+  flex: none;
   padding: 12px 15px;
   border: 1px solid #e2e8df;
   border-radius: 10px;
@@ -328,7 +362,7 @@
 .bubble p {
   white-space: pre-wrap;
   color: #526751;
-  font-size: 11px;
+  font-size: 13px;
   overflow-wrap: anywhere;
 }
 .bubble small {
@@ -336,7 +370,7 @@
   justify-content: flex-end;
   gap: 5px;
   align-items: center;
-  font-size: 8px;
+  font-size: 10px;
   margin-top: 8px;
   color: #93a08e;
 }
@@ -393,7 +427,7 @@
 }
 .chat-welcome {
   flex: 1;
-  min-height: 355px;
+  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;

@@ -278,3 +278,26 @@
   margin: auto;
   padding: 36px 38px 24px;
 }
+.shell main.inbox-main {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 480px;
+}
+.inbox-main > .topbar {
+  flex: none;
+}
+.inbox-main > .content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  max-width: none;
+  margin: 0;
+  padding-block: clamp(12px, 2.5dvh, 24px) 16px;
+}
+.inbox-main .page-heading {
+  flex: none;
+  margin-bottom: 16px;
+}

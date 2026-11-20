@@ -1,21 +1,17 @@
 import { DownloadMinimalisticIcon as Download } from "@solar-icons/react/linear/download-minimalistic";
 import { download, formatMoney } from "../../api";
 import { PaymentActions } from "../payments/PaymentActions";
-import { contactTitle } from "./viewHelpers";
-import { Badge } from "./viewHelpers";
-import { Empty } from "./viewHelpers";
+import { Badge, contactTitle, Empty } from "./viewHelpers";
 import type { DashboardState } from "./useDashboard";
 export function PaymentsPage({
-  page,
-  overview,
   products,
   busy,
   action,
-  realPayments,
-}: Pick<
-  DashboardState,
-  "page" | "overview" | "products" | "busy" | "action" | "realPayments"
->) {
+  payments,
+}: Pick<DashboardState, "products" | "busy" | "action" | "payments">) {
+  const pending = payments?.filter(
+    (payment) => payment.status === "PENDING",
+  ).length;
   return (
     <>
       <div className="page-heading">
@@ -24,17 +20,22 @@ export function PaymentsPage({
           <h1>Pagos y comprobantes</h1>
           <p>Comprobantes y aprobaciones de tus productos.</p>
         </div>
-        <span className="badge review">
-          {overview?.pending || 0} por revisar
-        </span>
+        {pending !== undefined && (
+          <span className="badge review">{pending} por revisar</span>
+        )}
       </div>
       <section className="card">
-        {realPayments.length ? (
+        {payments === null ? (
+          <p className="muted padded" role="status">
+            Cargando comprobantes…
+          </p>
+        ) : payments.length ? (
           <div className="table-scroll">
             <table>
               <thead>
                 <tr>
                   <th>Cliente / producto</th>
+                  <th>Recibido</th>
                   <th>Importe cotizado</th>
                   <th>Estado</th>
                   <th>Comprobante</th>
@@ -42,7 +43,7 @@ export function PaymentsPage({
                 </tr>
               </thead>
               <tbody>
-                {realPayments.map((p) => (
+                {payments.map((p) => (
                   <tr key={p.id}>
                     <td>
                       <strong>{contactTitle(p.conversation)}</strong>
@@ -51,10 +52,19 @@ export function PaymentsPage({
                           "Producto sin identificar"}
                         {p.packName && ` · Pack ${p.packNumber}: ${p.packName}`}
                       </small>
+                      <small>
+                        {p.connectionName}
+                        {p.historicalConnection && " · WhatsApp histórico"}
+                      </small>
+                    </td>
+                    <td>
+                      <time dateTime={p.createdAt}>
+                        {new Date(p.createdAt).toLocaleDateString("es-AR")}
+                      </time>
                     </td>
                     <td>
                       {p.amountCents !== null
-                        ? formatMoney(p.amountCents, p.currency)
+                        ? formatMoney(p.amountCents, p.currency ?? undefined)
                         : "Sin cotización"}
                     </td>
                     <td>
@@ -95,8 +105,12 @@ export function PaymentsPage({
                         />
                       ) : (
                         <small>
-                          {new Date(p.reviewedAt).toLocaleString("es-AR")}
-                          <br />
+                          {p.reviewedAt && (
+                            <>
+                              {new Date(p.reviewedAt).toLocaleString("es-AR")}
+                              <br />
+                            </>
+                          )}
                           {p.reason}
                         </small>
                       )}
@@ -107,7 +121,7 @@ export function PaymentsPage({
             </table>
           </div>
         ) : (
-          <Empty title="No hay pagos para revisar">
+          <Empty title="Todavía no hay comprobantes">
             Los comprobantes que recibas aparecerán acá.
           </Empty>
         )}

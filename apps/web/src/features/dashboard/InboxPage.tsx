@@ -1,3 +1,5 @@
+import { useLayoutEffect, useRef } from "react";
+import { AltArrowLeftIcon as ChevronLeft } from "@solar-icons/react/linear/alt-arrow-left";
 import { CheckReadIcon as CheckCheck } from "@solar-icons/react/linear/check-read";
 import { DownloadMinimalisticIcon as Download } from "@solar-icons/react/linear/download-minimalistic";
 import { ChatRoundIcon as MessageCircle } from "@solar-icons/react/linear/chat-round";
@@ -12,8 +14,6 @@ import { contactTitle } from "./viewHelpers";
 import { Badge } from "./viewHelpers";
 import type { DashboardState } from "./useDashboard";
 export function InboxPage({
-  page,
-  conversations,
   channelFilter,
   setChannelFilter,
   busy,
@@ -29,8 +29,6 @@ export function InboxPage({
   visibleConversations,
 }: Pick<
   DashboardState,
-  | "page"
-  | "conversations"
   | "channelFilter"
   | "setChannelFilter"
   | "busy"
@@ -49,6 +47,25 @@ export function InboxPage({
     !!selected?.paused &&
     selected?.state !== "REVIEW" &&
     (selected?.state !== "WON" || !!selected?.humanControlled);
+  const messagesRef = useRef<HTMLDivElement>(null);
+  const followLatest = useRef(true);
+  const previousChat = useRef<string | undefined>(undefined);
+  const chatId = selected?.id;
+  const lastMessageId = selected?.messages.at(-1)?.id;
+
+  function scrollToLatest() {
+    const history = messagesRef.current;
+    if (history) history.scrollTop = history.scrollHeight;
+  }
+
+  useLayoutEffect(() => {
+    if (previousChat.current !== chatId) {
+      previousChat.current = chatId;
+      followLatest.current = true;
+    }
+    if (followLatest.current) scrollToLatest();
+  }, [chatId, lastMessageId]);
+
   return (
     <>
       <div className="page-heading compact">
@@ -60,7 +77,7 @@ export function InboxPage({
           </p>
         </div>
       </div>
-      <div className="inbox">
+      <div className={selected ? "inbox has-selection" : "inbox"}>
         <section className="conversation-list">
           <div className="list-heading">
             <h3>
@@ -97,44 +114,55 @@ export function InboxPage({
               />
             </div>
           </div>
-          {visibleConversations.map((c) => (
-            <button
-              className={`conversation-item ${selected?.id === c.id ? "selected" : ""}`}
-              key={c.id}
-              onClick={() => openChat(c.id)}
-            >
-              <span className="avatar">{contactTitle(c).slice(0, 2)}</span>
-              <div>
-                <strong>{contactTitle(c)}</strong>
-                {c.contactPhone && <small>+{c.contactPhone}</small>}
-                <small className="conversation-channel">
-                  {openwaConnections.find(
-                    (connection) => connection.id === c.connectionId,
-                  )?.name || "WhatsApp anterior"}
-                </small>
-                <p>{c.messages[0]?.text || "Sin mensajes"}</p>
-                <Badge value={c.state} />
-              </div>
-            </button>
-          ))}
-          {!visibleConversations.length && (
-            <p className="muted padded">
-              {search
-                ? "No hay coincidencias."
-                : channelFilter === "active" && !activeConnectionIds.size
-                  ? "No hay WhatsApp activo. Elegí un número o «Todos, incluido historial» para ver chats anteriores."
-                  : "Todavía no hay conversaciones en este canal."}
-            </p>
-          )}
+          <div className="conversation-items">
+            {visibleConversations.map((c) => (
+              <button
+                className={`conversation-item ${selected?.id === c.id ? "selected" : ""}`}
+                key={c.id}
+                onClick={() => openChat(c.id)}
+                aria-current={selected?.id === c.id ? "true" : undefined}
+              >
+                <span className="avatar">{contactTitle(c).slice(0, 2)}</span>
+                <div>
+                  <strong>{contactTitle(c)}</strong>
+                  {c.contactPhone && <small>+{c.contactPhone}</small>}
+                  <small className="conversation-channel">
+                    {openwaConnections.find(
+                      (connection) => connection.id === c.connectionId,
+                    )?.name || "WhatsApp anterior"}
+                  </small>
+                  <p>{c.messages[0]?.text || "Sin mensajes"}</p>
+                  <Badge value={c.state} />
+                </div>
+              </button>
+            ))}
+            {!visibleConversations.length && (
+              <p className="muted padded">
+                {search
+                  ? "No hay coincidencias."
+                  : channelFilter === "active" && !activeConnectionIds.size
+                    ? "No hay WhatsApp activo. Elegí un número o «Todos, incluido historial» para ver chats anteriores."
+                    : "Todavía no hay conversaciones en este canal."}
+              </p>
+            )}
+          </div>
         </section>
         <section className="chat-panel">
           {selected ? (
             <>
               <div className="chat-header">
+                <button
+                  type="button"
+                  className="icon-button chat-back"
+                  aria-label="Volver a la lista de conversaciones"
+                  onClick={() => setSelected(null)}
+                >
+                  <ChevronLeft size={18} />
+                </button>
                 <span className="avatar">
                   {contactTitle(selected).slice(0, 2)}
                 </span>
-                <div>
+                <div className="chat-contact">
                   <h3>{contactTitle(selected)}</h3>
                   <small>
                     {selected.contactPhone
@@ -147,58 +175,77 @@ export function InboxPage({
                       (connection) => connection.id === selected.connectionId,
                     )?.name || "WhatsApp anterior"}
                   </small>
-                  <br />
                   <small>
                     {selected.product?.name || "Producto sin identificar"}
                   </small>
                 </div>
-                <Badge value={selected.state} />
-                {selected.humanControlled && (
-                  <small role="status">
-                    Atendida por vos · agente en silencio
-                  </small>
-                )}
-                <button
-                  className="secondary"
-                  disabled={
-                    busy ||
-                    (selected.state === "WON" && !selected.humanControlled) ||
-                    (selected.state === "REVIEW" && !!selected.humanControlled)
-                  }
-                  title={
-                    selected.state === "REVIEW"
-                      ? "El agente permanece pausado durante la revisión"
-                      : selected.state === "WON"
-                        ? "Una nueva consulta por un curso habilitado puede iniciar otra venta; reactivar libera el control humano"
-                        : undefined
-                  }
-                  onClick={() =>
-                    action(
-                      async () => {
-                        await api(
-                          `/conversations/${selected.id}/human`,
-                          "POST",
-                          { resume: resumeAgent },
-                        );
-                        setSelected(await api(`/conversations/${selected.id}`));
-                      },
-                      resumeAgent
-                        ? "Agente reactivado"
-                        : "Conversación atendida por vos",
-                    )
-                  }
-                >
-                  {resumeAgent ? <Play size={14} /> : <Pause size={14} />}{" "}
-                  {selected.state === "WON" && !selected.humanControlled
-                    ? "Venta completada"
-                    : resumeAgent
-                      ? "Reactivar agente"
-                      : selected.humanControlled
-                        ? "Atendida por vos"
-                        : "Tomar control"}
-                </button>
+                <div className="chat-controls">
+                  <Badge value={selected.state} />
+                  {selected.humanControlled && (
+                    <small role="status">
+                      Atendida por vos · agente en silencio
+                    </small>
+                  )}
+                  <button
+                    className="secondary"
+                    disabled={
+                      busy ||
+                      (selected.state === "WON" && !selected.humanControlled) ||
+                      (selected.state === "REVIEW" &&
+                        !!selected.humanControlled)
+                    }
+                    title={
+                      selected.state === "REVIEW"
+                        ? "El agente permanece pausado durante la revisión"
+                        : selected.state === "WON"
+                          ? "Una nueva consulta por un curso habilitado puede iniciar otra venta; reactivar libera el control humano"
+                          : undefined
+                    }
+                    onClick={() =>
+                      action(
+                        async () => {
+                          await api(
+                            `/conversations/${selected.id}/human`,
+                            "POST",
+                            { resume: resumeAgent },
+                          );
+                          setSelected(
+                            await api(`/conversations/${selected.id}`),
+                          );
+                        },
+                        resumeAgent
+                          ? "Agente reactivado"
+                          : "Conversación atendida por vos",
+                      )
+                    }
+                  >
+                    {resumeAgent ? <Play size={14} /> : <Pause size={14} />}{" "}
+                    {selected.state === "WON" && !selected.humanControlled
+                      ? "Venta completada"
+                      : resumeAgent
+                        ? "Reactivar agente"
+                        : selected.humanControlled
+                          ? "Atendida por vos"
+                          : "Tomar control"}
+                  </button>
+                </div>
               </div>
-              <div className="messages">
+              <div
+                className="messages"
+                ref={messagesRef}
+                role="region"
+                aria-label="Historial de mensajes"
+                tabIndex={0}
+                onScroll={(event) => {
+                  const { clientHeight, scrollHeight, scrollTop } =
+                    event.currentTarget;
+                  followLatest.current =
+                    scrollHeight - scrollTop - clientHeight <= 32;
+                }}
+                onLoadCapture={() => {
+                  if (followLatest.current) scrollToLatest();
+                }}
+              >
                 {selected.messages.map((m) => (
                   <div
                     key={m.id}
@@ -247,6 +294,7 @@ export function InboxPage({
                 busy={busy}
                 run={action}
                 refresh={async () => {
+                  followLatest.current = true;
                   setSelected(await api(`/conversations/${selected.id}`));
                 }}
               />

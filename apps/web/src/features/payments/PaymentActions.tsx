@@ -2,25 +2,26 @@ import { useState } from "react";
 import { CheckIcon as Check } from "@solar-icons/react/linear/check";
 import { CloseIcon as X } from "@solar-icons/react/linear/close";
 import { api, formatMoney } from "../../api";
-import type { Product, Run } from "../../types";
+import type { Payment, Product, Run } from "../../types";
 export function PaymentActions({
   payment,
   products,
   busy,
   run,
 }: {
-  payment: any;
+  payment: Payment;
   products: Product[];
   busy: boolean;
   run: Run;
 }) {
-  const [decision, setDecision] = useState("");
+  const [decision, setDecision] = useState<"" | "APPROVED" | "REJECTED">("");
   const [deliveryMode, setDeliveryMode] = useState<
     "SEND" | "ALREADY_DELIVERED"
   >("SEND");
   const alreadyDelivered = deliveryMode === "ALREADY_DELIVERED";
+  const historicalSend = payment.historicalConnection && !alreadyDelivered;
   function beginReview(
-    value: string,
+    value: "APPROVED" | "REJECTED",
     mode: "SEND" | "ALREADY_DELIVERED" = "SEND",
   ) {
     setExpectedAssetId(payment.assetId);
@@ -55,6 +56,7 @@ export function PaymentActions({
       className="payment-confirm"
       onSubmit={(e) => {
         e.preventDefault();
+        if (historicalSend || receiptChanged) return;
         run(
           async () => {
             await api(`/payments/${payment.id}/review`, "POST", {
@@ -164,6 +166,7 @@ export function PaymentActions({
           className="primary"
           disabled={
             busy ||
+            historicalSend ||
             receiptChanged ||
             (decision === "APPROVED" &&
               needsSelection &&
@@ -189,28 +192,37 @@ export function PaymentActions({
       </div>
     </form>
   ) : (
-    <div className="button-row">
-      <button
-        className="approve"
-        disabled={busy}
-        onClick={() => beginReview("APPROVED", "SEND")}
-      >
-        <Check size={15} /> Aprobar y enviar curso
-      </button>
-      <button
-        className="secondary"
-        disabled={busy}
-        onClick={() => beginReview("APPROVED", "ALREADY_DELIVERED")}
-      >
-        Aprobar: ya lo entregué
-      </button>
-      <button
-        className="reject"
-        disabled={busy}
-        onClick={() => beginReview("REJECTED")}
-      >
-        <X size={15} /> Rechazar
-      </button>
-    </div>
+    <>
+      {payment.historicalConnection && (
+        <small>Envío no disponible para este WhatsApp histórico.</small>
+      )}
+      <div className="button-row">
+        {!payment.historicalConnection && (
+          <button
+            className="approve"
+            disabled={busy}
+            onClick={() => beginReview("APPROVED", "SEND")}
+          >
+            <Check size={15} /> Aprobar y enviar curso
+          </button>
+        )}
+        <button
+          className="secondary"
+          disabled={busy}
+          onClick={() => beginReview("APPROVED", "ALREADY_DELIVERED")}
+        >
+          Aprobar: ya lo entregué
+        </button>
+        {!payment.historicalConnection && (
+          <button
+            className="reject"
+            disabled={busy}
+            onClick={() => beginReview("REJECTED")}
+          >
+            <X size={15} /> Rechazar
+          </button>
+        )}
+      </div>
+    </>
   );
 }

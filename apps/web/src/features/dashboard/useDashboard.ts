@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, credentials } from "../../api";
-import type { Product } from "../../types";
+import type { Payment, Product } from "../../types";
 import { useConnectionStatuses } from "../../hooks/useConnectionStatuses";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { isConnectionActive } from "../../connectionStatus";
@@ -21,7 +21,7 @@ export function useDashboard() {
     [conversations, setConversations] = useState<Conversation[]>([]),
     [connections, setConnections] = useState<Connection[]>([]),
     [channelFilter, setChannelFilter] = useState("active"),
-    [payments, setPayments] = useState<any[]>([]),
+    [payments, setPayments] = useState<Payment[] | null>(null),
     [settings, setSettings] = useState<any>(null);
   const connectionStatuses = useConnectionStatuses(
     signed && !!workspace,
@@ -46,7 +46,7 @@ export function useDashboard() {
       api<Product[]>("/products"),
       api<Conversation[]>("/conversations"),
       api<Connection[]>("/connections"),
-      api("/payments"),
+      api<Payment[]>("/payments?provider=OPENWA"),
       api("/settings"),
     ]);
     setOverview(data[0]);
@@ -122,9 +122,6 @@ export function useDashboard() {
       connections.find((connection) => connection.id === c.connectionId)
         ?.provider === "OPENWA",
   );
-  const realPayments = payments.filter((payment) =>
-    realConversations.some((c) => c.id === payment.conversation?.id),
-  );
   const openwaConnections = connections.filter(
     (connection) => connection.provider === "OPENWA",
   );
@@ -199,7 +196,6 @@ export function useDashboard() {
     openChat,
     current,
     realConversations,
-    realPayments,
     openwaConnections,
     statusFor,
     activeConnectionIds,

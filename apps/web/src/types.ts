@@ -34,6 +34,31 @@ export type Pack = {
   deliveryMessage: string;
 };
 export type PackDraft = Omit<Pack, "priceCents"> & { price: string };
+export type Payment = {
+  id: string;
+  assetId: string;
+  amountCents: number | null;
+  currency: string | null;
+  packNumber: number | null;
+  packName: string | null;
+  deliveryMessage: string | null;
+  deliveryMode: "SEND" | "ALREADY_DELIVERED" | null;
+  receiptCheckSummary: string | null;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  createdAt: string;
+  reviewedAt: string | null;
+  reviewedBy: string | null;
+  reason: string | null;
+  connectionName: string;
+  historicalConnection: boolean;
+  conversation: {
+    contact: string;
+    contactName: string | null;
+    contactPhone: string | null;
+    humanControlled: boolean;
+    product: { id: string; name: string } | null;
+  };
+};
 export type Rule = {
   question: string;
   answer: string;

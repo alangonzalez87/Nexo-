@@ -93,7 +93,6 @@ function App() {
     openChat,
     current,
     realConversations,
-    realPayments,
     openwaConnections,
     statusFor,
     activeConnectionIds,
@@ -194,7 +193,7 @@ function App() {
           </button>
         </div>
       </aside>
-      <main>
+      <main className={page === "inbox" ? "inbox-main" : undefined}>
         <header className="topbar">
           <div className="breadcrumb">
             Mi negocio <ChevronRight size={14} />{" "}

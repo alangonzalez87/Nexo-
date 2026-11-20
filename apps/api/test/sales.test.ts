@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { PrismaClient } from "@prisma/client";
 import { buildApp } from "../src/app.js";
 import { configFromEnv } from "../src/config.js";
+import { IntegrationSettings } from "../src/integrations.js";
 import { seed } from "../../../packages/database/src/seed.js";
 import { startLocalDb } from "../../../scripts/local-db.js";
 import { answer } from "../src/seller.js";
@@ -1490,4 +1491,101 @@ test("exact and selected answers send only their configured images; disabled cou
     }),
     0,
   );
+});
+
+test("WhatsApp payments include older pending receipts beyond both recent lists", async () => {
+  const currentSessionId = randomUUID();
+  const [currentChannel, historicalChannel] = await Promise.all([
+    db.connection.create({
+      data: {
+        workspaceId,
+        provider: "OPENWA",
+        name: "WhatsApp del negocio",
+        sessionId: currentSessionId,
+      },
+    }),
+    db.connection.create({
+      data: {
+        workspaceId,
+        provider: "OPENWA",
+        name: "WhatsApp anterior",
+        sessionId: randomUUID(),
+      },
+    }),
+  ]);
+  await new IntegrationSettings(db, configFromEnv()).saveManaged(
+    workspaceId,
+    "fixture-gateway-key",
+    currentSessionId,
+  );
+  const oldDate = new Date("2020-01-01T00:00:00Z");
+  const oldChat = await db.conversation.create({
+    data: {
+      workspaceId,
+      connectionId: historicalChannel.id,
+      contact: "historical-payment",
+      contactName: "Cliente anterior",
+      updatedAt: oldDate,
+    },
+  });
+  const currentChat = await db.conversation.create({
+    data: {
+      workspaceId,
+      connectionId: currentChannel.id,
+      contact: "current-payment",
+    },
+  });
+  const mockChat = await db.conversation.create({
+    data: { workspaceId, connectionId, contact: "mock-payment" },
+  });
+  await db.conversation.createMany({
+    data: Array.from({ length: 200 }, (_, index) => ({
+      workspaceId,
+      connectionId: currentChannel.id,
+      contact: `recent-chat-${index}`,
+    })),
+  });
+
+  const olderReference = randomUUID();
+  const recentReference = randomUUID();
+  const mockReference = randomUUID();
+  await db.payment.createMany({
+    data: [
+      {
+        workspaceId,
+        conversationId: oldChat.id,
+        assetId: olderReference,
+        createdAt: oldDate,
+      },
+      { workspaceId, conversationId: currentChat.id, assetId: recentReference },
+      { workspaceId, conversationId: mockChat.id, assetId: mockReference },
+      ...Array.from({ length: 201 }, () => ({
+        workspaceId,
+        conversationId: currentChat.id,
+        assetId: randomUUID(),
+        status: "APPROVED",
+      })),
+    ],
+  });
+
+  const chats = (await request("GET", "/api/conversations")).json();
+  assert.ok(!chats.some((chat: { id: string }) => chat.id === oldChat.id));
+  const response = await request("GET", "/api/payments?provider=OPENWA");
+  assert.equal(response.statusCode, 200, response.body);
+  const payments = response.json();
+  assert.deepEqual(
+    payments.slice(0, 2).map((payment: { assetId: string }) => payment.assetId),
+    [recentReference, olderReference],
+  );
+  assert.equal(payments[0].historicalConnection, false);
+  assert.equal(payments[1].historicalConnection, true);
+  assert.equal(payments[1].connectionName, "WhatsApp anterior");
+  assert.equal(payments[1].conversation.contactName, "Cliente anterior");
+  assert.equal(payments.length, 202);
+  assert.ok(
+    payments
+      .slice(2)
+      .every((payment: { status: string }) => payment.status === "APPROVED"),
+  );
+  assert.equal((await request("GET", "/api/overview")).json().pending, 2);
 });

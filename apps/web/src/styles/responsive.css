@@ -58,7 +58,7 @@
     grid-template-columns: 1fr;
   }
   .inbox {
-    grid-template-columns: 225px 1fr;
+    grid-template-columns: 225px minmax(0, 1fr);
   }
   .chat-header {
     padding: 15px;
@@ -340,12 +340,21 @@
     grid-template-columns: 1fr 1fr;
   }
   .inbox {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .conversation-list {
-    max-height: 200px;
-    overflow: auto;
-    border-bottom: 1px solid #dde7d9;
+    border-right: 0;
+  }
+  .inbox.has-selection .conversation-list,
+  .inbox:not(.has-selection) .chat-panel {
+    display: none;
+  }
+  .chat-back.icon-button {
+    display: grid;
+    flex: none;
+  }
+  .chat-header {
+    flex-wrap: wrap;
   }
   .conversation-item {
     padding: 10px 15px;
@@ -440,6 +449,16 @@
   }
   .chat-header .secondary {
     font-size: 9px;
+  }
+  .chat-controls {
+    width: 100%;
+    justify-content: flex-end;
+  }
+  .messages {
+    padding: 14px;
+  }
+  .human-compose {
+    padding-inline: 10px;
   }
   .connection-row {
     flex-wrap: wrap;
