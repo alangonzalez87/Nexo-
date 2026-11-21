@@ -96,7 +96,6 @@ function App() {
     openwaConnections,
     statusFor,
     activeConnectionIds,
-    visibleConversations,
   } = dashboard;
   if (!signed) return <Login onLogin={() => setSigned(true)} />;
   return (

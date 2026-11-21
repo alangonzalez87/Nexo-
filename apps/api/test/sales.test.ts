@@ -1589,3 +1589,155 @@ test("WhatsApp payments include older pending receipts beyond both recent lists"
   );
   assert.equal((await request("GET", "/api/overview")).json().pending, 2);
 });
+
+test("starting a course from the inbox resumes the agent and queues the configured welcome once", async () => {
+  const image = await upload("/api/images", imageFixture(), "course-reply.png");
+  assert.equal(image.statusCode, 200, image.body);
+  const imageId = image.json().id;
+  const created = await request("POST", "/api/products", {
+    name: "Course reply fixture",
+    activationKeyword: "INBOX WELCOME FIXTURE",
+    priceCents: 100,
+    firstMessage: "Bienvenida del curso",
+    firstImageId: imageId,
+    followUpMessages: ["Materiales", "El programa del curso"],
+    followUpImageIds: ["", imageId],
+  });
+  assert.equal(created.statusCode, 200, created.body);
+  const { id: courseId } = created.json();
+  const { conversationId } = await incoming(
+    "course-reply-single",
+    "Hola, hay alguien?",
+  );
+  await sales.human(workspaceId, conversationId, undefined, false);
+  const previous = await chat(conversationId);
+  assert.equal(previous.humanControlled, true);
+  const anchor = previous.messages.at(-1).id;
+  const requestBody = {
+    productId: courseId,
+    unansweredOnly: false,
+    targets: [{ conversationId, expectedMessageId: anchor }],
+  };
+  const [first, retry] = await Promise.all([
+    request("POST", "/api/conversations/course-replies", requestBody),
+    request("POST", "/api/conversations/course-replies", requestBody),
+  ]);
+  assert.equal(first.statusCode, 200, first.body);
+  assert.equal(retry.statusCode, 200, retry.body);
+  assert.deepEqual([first.json()[0].status, retry.json()[0].status].sort(), [
+    "ALREADY_QUEUED",
+    "QUEUED",
+  ]);
+  const after = await chat(conversationId);
+  assert.equal(after.product.id, courseId);
+  assert.equal(after.state, "QUALIFIED");
+  assert.equal(after.paused, false);
+  assert.equal(after.humanControlled, false);
+  assert.deepEqual(
+    after.messages
+      .filter((message: any) => message.direction === "OUT")
+      .map((message: any) => [message.text, message.assetId, message.status]),
+    [
+      ["Bienvenida del curso", imageId, "PENDING"],
+      ["Materiales", null, "PENDING"],
+      ["El programa del curso", imageId, "PENDING"],
+    ],
+  );
+});
+
+test("batch course replies ignore automatic greetings and recheck that selected chats still await a reply", async () => {
+  const greeting = "¡Información de la prueba de recuperación!";
+  const settings = new IntegrationSettings(db, configFromEnv());
+  const { openwaEnabled, openwaUrl, aiProvider, openaiModel, publicUrl } =
+    await settings.view(workspaceId);
+  await settings.save(workspaceId, {
+    openwaEnabled,
+    openwaUrl,
+    aiProvider: aiProvider === "openai" ? "openai" : "rules",
+    openaiModel,
+    publicUrl,
+    automaticOwnMessages: [greeting],
+  });
+  const fixture = async (contact: string) => {
+    const { conversationId } = await incoming(
+      contact,
+      "¿Me pasás más información?",
+    );
+    const message = (await chat(conversationId)).messages.at(-1);
+    return { conversationId, expectedMessageId: message.id };
+  };
+  const waiting = await fixture("course-reply-batch-waiting");
+  const changed = await fixture("course-reply-batch-changed");
+  const review = await fixture("course-reply-batch-review");
+  const pending = await fixture("course-reply-batch-pending");
+  const other = await fixture("course-reply-batch-other-course");
+  const otherCourse = await request("POST", "/api/products", {
+    name: "Other course replay fixture",
+    priceCents: 100,
+  });
+  assert.equal(otherCourse.statusCode, 200, otherCourse.body);
+  await db.conversation.update({
+    where: { id: other.conversationId },
+    data: { productId: otherCourse.json().id },
+  });
+  await db.conversation.update({
+    where: { id: review.conversationId },
+    data: { state: "REVIEW", paused: true },
+  });
+  const outgoing = (conversationId: string, text: string, status: string) =>
+    db.message.create({
+      data: {
+        workspaceId,
+        conversationId,
+        direction: "OUT",
+        origin: "HUMAN",
+        status,
+        text,
+        externalId: `own:${randomUUID()}`,
+      },
+    });
+  await outgoing(waiting.conversationId, greeting.normalize("NFD"), "SENT");
+  await outgoing(pending.conversationId, "Envío en preparación", "PENDING");
+  const before = await request("GET", "/api/conversations/unanswered");
+  assert.equal(before.statusCode, 200, before.body);
+  const candidates = before.json() as {
+    id: string;
+    messages: { id: string }[];
+  }[];
+  assert.equal(
+    candidates.find(({ id }) => id === waiting.conversationId)?.messages[0].id,
+    waiting.expectedMessageId,
+  );
+  assert.ok(candidates.some(({ id }) => id === changed.conversationId));
+  assert.ok(
+    !candidates.some(
+      ({ id }) => id === review.conversationId || id === pending.conversationId,
+    ),
+  );
+  await outgoing(
+    changed.conversationId,
+    "Hola, ya te paso los detalles.",
+    "SENT",
+  );
+
+  const result = await request("POST", "/api/conversations/course-replies", {
+    productId,
+    unansweredOnly: true,
+    targets: [waiting, changed, review, pending, other],
+  });
+  assert.equal(result.statusCode, 200, result.body);
+  assert.deepEqual(
+    result.json().map(({ status }: { status: string }) => status),
+    ["QUEUED", "SKIPPED", "SKIPPED", "SKIPPED", "SKIPPED"],
+  );
+  const after = await request("GET", "/api/conversations/unanswered");
+  assert.equal(after.statusCode, 200, after.body);
+  assert.ok(
+    !after
+      .json()
+      .some(
+        ({ id }: { id: string }) =>
+          id === changed.conversationId || id === waiting.conversationId,
+      ),
+  );
+});

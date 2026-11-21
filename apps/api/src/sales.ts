@@ -15,6 +15,8 @@ import type { SalesContext } from "./sales/context.js";
 import { receiveMessage } from "./sales/receiving.js";
 import { ReceiptService } from "./sales/receipts.js";
 import { OutboxService } from "./sales/outbox.js";
+import { listUnanswered, startCourseReplies } from "./sales/course-replies.js";
+import type { CourseReplyRequest } from "../../../packages/shared/src/course-replies.js";
 type Tx = Prisma.TransactionClient;
 
 export class SalesService {
@@ -60,6 +62,12 @@ export class SalesService {
   private outgoing = queueOutgoing;
   receive(workspaceId: string, input: IncomingMessage) {
     return receiveMessage(this.context, workspaceId, input);
+  }
+  listUnanswered(workspaceId: string, provider?: "OPENWA") {
+    return listUnanswered(this.context, workspaceId, provider);
+  }
+  startCourseReplies(workspaceId: string, request: CourseReplyRequest) {
+    return startCourseReplies(this.context, workspaceId, request);
   }
   review(...args: Parameters<ReceiptService["review"]>) {
     return this.receipts.review(...args);

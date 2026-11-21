@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AltArrowLeftIcon as ChevronLeft } from "@solar-icons/react/linear/alt-arrow-left";
 import { CheckReadIcon as CheckCheck } from "@solar-icons/react/linear/check-read";
 import { DownloadMinimalisticIcon as Download } from "@solar-icons/react/linear/download-minimalistic";
@@ -7,12 +7,20 @@ import { PauseIcon as Pause } from "@solar-icons/react/linear/pause";
 import { PlayIcon as Play } from "@solar-icons/react/linear/play";
 import { MagnifierIcon as Search } from "@solar-icons/react/linear/magnifier";
 import { HumanComposer } from "./HumanComposer";
+import {
+  CourseReplyDialog,
+  courseReplySummary,
+  type CourseReplySelection,
+} from "./CourseReplyDialog";
 import { ResponseImage } from "../../components/ResponseImage";
 import { api, download } from "../../api";
 import { connectionStatusName } from "../../connectionStatus";
-import { contactTitle } from "./viewHelpers";
-import { Badge } from "./viewHelpers";
+import { Badge, contactTitle, type Conversation } from "./viewHelpers";
 import type { DashboardState } from "./useDashboard";
+import {
+  MAX_COURSE_REPLY_BATCH,
+  type CourseReplyResult,
+} from "../../../../../packages/shared/src/course-replies.js";
 export function InboxPage({
   channelFilter,
   setChannelFilter,
@@ -26,7 +34,10 @@ export function InboxPage({
   openwaConnections,
   statusFor,
   activeConnectionIds,
-  visibleConversations,
+  realConversations,
+  products,
+  refresh,
+  setNotice,
 }: Pick<
   DashboardState,
   | "channelFilter"
@@ -41,8 +52,74 @@ export function InboxPage({
   | "openwaConnections"
   | "statusFor"
   | "activeConnectionIds"
-  | "visibleConversations"
+  | "realConversations"
+  | "products"
+  | "refresh"
+  | "setNotice"
 >) {
+  const [unansweredOnly, setUnansweredOnly] = useState(false);
+  const [unanswered, setUnanswered] = useState<Conversation[] | null>(null);
+  const [listError, setListError] = useState("");
+  const [listRevision, setListRevision] = useState(0);
+  const [marked, setMarked] = useState<Map<string, string>>(() => new Map());
+  const [courseReply, setCourseReply] = useState<CourseReplySelection | null>(
+    null,
+  );
+
+  useEffect(() => {
+    if (!unansweredOnly) return;
+    const controller = new AbortController();
+    async function fetchUnanswered() {
+      try {
+        const rows = await api<Conversation[]>(
+          "/conversations/unanswered?provider=OPENWA",
+          "GET",
+          undefined,
+          controller.signal,
+        );
+        if (!controller.signal.aborted) {
+          setUnanswered(rows);
+          setListError("");
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setListError(
+            error instanceof Error
+              ? error.message
+              : "No se pudo cargar la lista.",
+          );
+        }
+      }
+    }
+    void fetchUnanswered();
+    const interval = setInterval(fetchUnanswered, 8000);
+    return () => {
+      controller.abort();
+      clearInterval(interval);
+    };
+  }, [unansweredOnly, listRevision]);
+
+  const query = search.trim().toLowerCase();
+  const visibleConversations = (
+    unansweredOnly ? (unanswered ?? []) : realConversations
+  ).filter(
+    (chat) =>
+      (!unansweredOnly || activeConnectionIds.has(chat.connectionId)) &&
+      (channelFilter === "all" ||
+        (channelFilter === "active"
+          ? activeConnectionIds.has(chat.connectionId)
+          : chat.connectionId === channelFilter)) &&
+      `${chat.contact} ${chat.contactName || ""} ${chat.contactPhone || ""} ${chat.product?.name || ""}`
+        .toLowerCase()
+        .includes(query),
+  );
+  const markedChats = visibleConversations.filter(
+    (chat) => chat.messages[0] && marked.get(chat.id) === chat.messages[0].id,
+  );
+  const canChooseCourse =
+    selected &&
+    activeConnectionIds.has(selected.connectionId) &&
+    selected.state !== "REVIEW";
   const resumeAgent =
     !!selected?.paused &&
     selected?.state !== "REVIEW" &&
@@ -65,6 +142,38 @@ export function InboxPage({
     }
     if (followLatest.current) scrollToLatest();
   }, [chatId, lastMessageId]);
+
+  function changeView(pending: boolean) {
+    if (pending === unansweredOnly) return;
+    setUnansweredOnly(pending);
+    setMarked(new Map());
+    if (pending) {
+      setUnanswered(null);
+      setListError("");
+    }
+  }
+
+  function onCourseReplyResult(results: CourseReplyResult[]) {
+    const summary = courseReplySummary(results);
+    if (summary) setNotice(summary);
+    setMarked(new Map());
+    setListRevision((current) => current + 1);
+    const affected =
+      chatId &&
+      results.some(
+        (result) =>
+          result.conversationId === chatId && result.status !== "SKIPPED",
+      );
+    if (affected) {
+      followLatest.current = true;
+      api<Conversation>(`/conversations/${chatId}`)
+        .then((chat) =>
+          setSelected((current) => (current?.id === chat.id ? chat : current)),
+        )
+        .catch(() => {});
+    }
+    void refresh().catch(() => {});
+  }
 
   return (
     <>
@@ -91,6 +200,7 @@ export function InboxPage({
                 onChange={(e) => {
                   setChannelFilter(e.target.value);
                   setSelected(null);
+                  setMarked(new Map());
                 }}
               >
                 <option value="active">
@@ -110,39 +220,162 @@ export function InboxPage({
               <input
                 value={search}
                 placeholder="Buscar conversación"
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setMarked(new Map());
+                }}
               />
             </div>
+            <div
+              className="inbox-views"
+              role="group"
+              aria-label="Filtrar por respuesta"
+            >
+              <button
+                type="button"
+                aria-pressed={!unansweredOnly}
+                onClick={() => changeView(false)}
+              >
+                Todos
+              </button>
+              <button
+                type="button"
+                aria-pressed={unansweredOnly}
+                onClick={() => changeView(true)}
+              >
+                Sin respuesta
+              </button>
+            </div>
           </div>
+          {unansweredOnly && visibleConversations.length > 0 && (
+            <div className="course-batch-actions">
+              <button
+                type="button"
+                className="text-button"
+                onClick={() =>
+                  setMarked(
+                    new Map(
+                      visibleConversations
+                        .slice(0, MAX_COURSE_REPLY_BATCH)
+                        .map((chat) => [chat.id, chat.messages[0].id]),
+                    ),
+                  )
+                }
+              >
+                {visibleConversations.length > MAX_COURSE_REPLY_BATCH
+                  ? `Marcar ${MAX_COURSE_REPLY_BATCH} visibles`
+                  : "Marcar visibles"}
+              </button>
+              {markedChats.length > 0 && (
+                <>
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={() => setMarked(new Map())}
+                  >
+                    Desmarcar
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary"
+                    aria-haspopup="dialog"
+                    disabled={busy || !!listError}
+                    onClick={() =>
+                      setCourseReply({
+                        label:
+                          markedChats.length === 1
+                            ? contactTitle(markedChats[0])
+                            : `${markedChats.length} conversaciones`,
+                        unansweredOnly: true,
+                        targets: markedChats.map((chat) => ({
+                          conversationId: chat.id,
+                          expectedMessageId: chat.messages[0].id,
+                          label: contactTitle(chat),
+                        })),
+                      })
+                    }
+                  >
+                    Elegir curso para {markedChats.length}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
           <div className="conversation-items">
             {visibleConversations.map((c) => (
-              <button
-                className={`conversation-item ${selected?.id === c.id ? "selected" : ""}`}
+              <div
                 key={c.id}
-                onClick={() => openChat(c.id)}
-                aria-current={selected?.id === c.id ? "true" : undefined}
+                className={unansweredOnly ? "course-batch-chat" : undefined}
               >
-                <span className="avatar">{contactTitle(c).slice(0, 2)}</span>
-                <div>
-                  <strong>{contactTitle(c)}</strong>
-                  {c.contactPhone && <small>+{c.contactPhone}</small>}
-                  <small className="conversation-channel">
-                    {openwaConnections.find(
-                      (connection) => connection.id === c.connectionId,
-                    )?.name || "WhatsApp anterior"}
-                  </small>
-                  <p>{c.messages[0]?.text || "Sin mensajes"}</p>
-                  <Badge value={c.state} />
-                </div>
-              </button>
+                {unansweredOnly && (
+                  <input
+                    type="checkbox"
+                    aria-label={`Marcar conversación de ${contactTitle(c)}`}
+                    checked={marked.get(c.id) === c.messages[0].id}
+                    disabled={
+                      marked.get(c.id) !== c.messages[0].id &&
+                      markedChats.length >= MAX_COURSE_REPLY_BATCH
+                    }
+                    onChange={(event) => {
+                      const checked = event.currentTarget.checked;
+                      setMarked((current) => {
+                        const next = new Map(current);
+                        if (checked) next.set(c.id, c.messages[0].id);
+                        else next.delete(c.id);
+                        return next;
+                      });
+                    }}
+                  />
+                )}
+                <button
+                  type="button"
+                  className={`conversation-item ${selected?.id === c.id ? "selected" : ""}`}
+                  onClick={() => openChat(c.id, !unansweredOnly)}
+                  aria-current={selected?.id === c.id ? "true" : undefined}
+                >
+                  <span className="avatar">{contactTitle(c).slice(0, 2)}</span>
+                  <div>
+                    <strong>{contactTitle(c)}</strong>
+                    {c.contactPhone && <small>+{c.contactPhone}</small>}
+                    <small className="conversation-channel">
+                      {openwaConnections.find(
+                        (connection) => connection.id === c.connectionId,
+                      )?.name || "WhatsApp anterior"}
+                    </small>
+                    {unansweredOnly && c.product && (
+                      <small>{c.product.name}</small>
+                    )}
+                    <p>{c.messages[0]?.text || "Sin mensajes"}</p>
+                    <Badge value={c.state} />
+                  </div>
+                </button>
+              </div>
             ))}
-            {!visibleConversations.length && (
+            {unansweredOnly && listError && (
+              <div className="muted padded" role="alert">
+                <p>{listError}</p>
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={() => setListRevision((current) => current + 1)}
+                >
+                  Volver a cargar
+                </button>
+              </div>
+            )}
+            {!visibleConversations.length && !(unansweredOnly && listError) && (
               <p className="muted padded">
-                {search
-                  ? "No hay coincidencias."
-                  : channelFilter === "active" && !activeConnectionIds.size
-                    ? "No hay WhatsApp activo. Elegí un número o «Todos, incluido historial» para ver chats anteriores."
-                    : "Todavía no hay conversaciones en este canal."}
+                {unansweredOnly
+                  ? !unanswered
+                    ? "Buscando conversaciones…"
+                    : search
+                      ? "No hay coincidencias."
+                      : "No hay chats sin respuesta en este canal."
+                  : search
+                    ? "No hay coincidencias."
+                    : channelFilter === "active" && !activeConnectionIds.size
+                      ? "No hay WhatsApp activo. Elegí un número o «Todos, incluido historial» para ver chats anteriores."
+                      : "Todavía no hay conversaciones en este canal."}
               </p>
             )}
           </div>
@@ -293,6 +526,22 @@ export function InboxPage({
                 conversationId={selected.id}
                 busy={busy}
                 run={action}
+                onChooseCourse={
+                  canChooseCourse
+                    ? () =>
+                        setCourseReply({
+                          label: contactTitle(selected),
+                          unansweredOnly: false,
+                          targets: [
+                            {
+                              conversationId: selected.id,
+                              expectedMessageId: lastMessageId ?? null,
+                              label: contactTitle(selected),
+                            },
+                          ],
+                        })
+                    : undefined
+                }
                 refresh={async () => {
                   followLatest.current = true;
                   setSelected(await api(`/conversations/${selected.id}`));
@@ -313,6 +562,14 @@ export function InboxPage({
           )}
         </section>
       </div>
+      {courseReply && (
+        <CourseReplyDialog
+          products={products}
+          selection={courseReply}
+          onClose={() => setCourseReply(null)}
+          onResult={onCourseReplyResult}
+        />
+      )}
     </>
   );
 }

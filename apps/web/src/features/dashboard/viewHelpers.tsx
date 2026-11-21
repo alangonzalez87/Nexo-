@@ -11,7 +11,7 @@ export type Conversation = {
   state: string;
   paused: boolean;
   humanControlled?: boolean;
-  product?: { name: string };
+  product?: { name: string } | null;
   messages: {
     id: string;
     text: string;

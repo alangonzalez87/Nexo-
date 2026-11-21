@@ -8,11 +8,13 @@ export function HumanComposer({
   busy,
   run,
   refresh,
+  onChooseCourse,
 }: {
   conversationId: string;
   busy: boolean;
   run: Run;
   refresh: () => Promise<void>;
+  onChooseCourse?: () => void;
 }) {
   const [imageId, setImageId] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -93,11 +95,35 @@ export function HumanComposer({
             <path d="m21 11-8.5 8.5a5.3 5.3 0 0 1-7.5-7.5L14 3a3.5 3.5 0 0 1 5 5l-9 9a1.8 1.8 0 0 1-2.5-2.5L16 6" />
           </svg>
         </button>
+        {onChooseCourse && (
+          <button
+            type="button"
+            className="compose-attach compose-course"
+            aria-label="Elegir curso"
+            title="Elegir curso (/)"
+            aria-haspopup="dialog"
+            disabled={busy}
+            onClick={onChooseCourse}
+          >
+            /
+          </button>
+        )}
         <input
           name="text"
-          placeholder="Responder como administrador…"
+          aria-label="Mensaje"
+          placeholder={
+            onChooseCourse
+              ? "Escribí un mensaje o / para cursos"
+              : "Responder como administrador…"
+          }
           required={!imageId}
           maxLength={4000}
+          onChange={(event) => {
+            if (!onChooseCourse || busy || event.currentTarget.value !== "/")
+              return;
+            event.currentTarget.value = "";
+            onChooseCourse();
+          }}
         />
         <button className="primary" disabled={busy}>
           Enviar

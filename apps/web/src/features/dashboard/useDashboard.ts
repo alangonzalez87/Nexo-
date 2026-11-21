@@ -106,11 +106,11 @@ export function useDashboard() {
       },
     });
   }
-  const openChat = async (id: string) => {
+  const openChat = async (id: string, focusChannel = true) => {
     await action(async () => {
       const conversation = await api<Conversation>(`/conversations/${id}`);
       setSelected(conversation);
-      setChannelFilter(conversation.connectionId);
+      if (focusChannel) setChannelFilter(conversation.connectionId);
       setPage("inbox");
     }, "");
   };
@@ -131,16 +131,6 @@ export function useDashboard() {
     openwaConnections
       .filter((connection) => isConnectionActive(statusFor(connection.id)))
       .map((connection) => connection.id),
-  );
-  const visibleConversations = realConversations.filter(
-    (c) =>
-      (channelFilter === "all" ||
-        (channelFilter === "active"
-          ? activeConnectionIds.has(c.connectionId)
-          : c.connectionId === channelFilter)) &&
-      `${c.contact} ${c.contactName || ""} ${c.contactPhone || ""} ${c.product?.name || ""}`
-        .toLowerCase()
-        .includes(search.toLowerCase()),
   );
   return {
     signed,
@@ -199,7 +189,6 @@ export function useDashboard() {
     openwaConnections,
     statusFor,
     activeConnectionIds,
-    visibleConversations,
   };
 }
 

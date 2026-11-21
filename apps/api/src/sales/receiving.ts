@@ -5,7 +5,6 @@ import {
   money,
   normalize,
   OpenAISelector,
-  productIntroduction,
   purchaseIntent,
   type PackIntent,
 } from "../seller.js";
@@ -21,6 +20,7 @@ import {
   resolveConfirmation,
 } from "./confirmations.js";
 import { takeHumanControl } from "./human-control.js";
+import { emptyCourseQuote, queueCourseWelcome } from "./course-replies.js";
 
 export async function receiveMessage(
   context: SalesContext,
@@ -189,11 +189,7 @@ export async function receiveMessage(
             state: "OUT_OF_SCOPE",
             paused: false,
             productId: null,
-            quotedPriceCents: null,
-            quotedCurrency: null,
-            selectedPackNumber: null,
-            selectedPackName: null,
-            selectedPackDeliveryMessage: null,
+            ...emptyCourseQuote,
           },
         });
       }
@@ -223,11 +219,7 @@ export async function receiveMessage(
           productId: routedProduct.id,
           state: "QUALIFIED",
           paused: false,
-          quotedPriceCents: null,
-          quotedCurrency: null,
-          selectedPackNumber: null,
-          selectedPackName: null,
-          selectedPackDeliveryMessage: null,
+          ...emptyCourseQuote,
         },
       });
       justQualified = true;
@@ -438,22 +430,14 @@ export async function receiveMessage(
       return { conversationId: conversation.id };
     }
     if (justQualified) {
-      const first = await respond(
-        productIntroduction(product),
-        product.firstImageId,
+      await queueCourseWelcome(
+        context,
+        tx,
+        workspaceId,
+        conversation.id,
+        product,
+        `reply:${eventKey}`,
       );
-      for (const [index, message] of product.followUpMessages.entries()) {
-        await context.outgoing(
-          tx,
-          workspaceId,
-          conversation.id,
-          message,
-          `reply:${eventKey}:followup:${index}`,
-          new Date(first.createdAt.getTime() + index + 1),
-          "AUTO",
-          product.followUpImageIds[index] || null,
-        );
-      }
       return { conversationId: conversation.id };
     }
     const exact = findExactRule(product.rules, query);

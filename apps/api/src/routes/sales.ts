@@ -3,6 +3,7 @@ import type { Config } from "../config.js";
 import type { RouteContext } from "./context.js";
 import { z } from "zod";
 import { idParam } from "./context.js";
+import { MAX_COURSE_REPLY_BATCH } from "../../../../packages/shared/src/course-replies.js";
 
 export function registerSalesRoutes(
   app: FastifyInstance,
@@ -25,16 +26,51 @@ export function registerSalesRoutes(
       take: 200,
     }),
   );
+  app.get("/api/conversations/unanswered", async (req) => {
+    const workspaceId = await scope(req);
+    const { provider } = z
+      .object({ provider: z.literal("OPENWA").optional() })
+      .parse(req.query);
+    return sales.listUnanswered(workspaceId, provider);
+  });
+  app.post("/api/conversations/course-replies", async (req) => {
+    const workspaceId = await scope(req, true);
+    const id = z.string().min(1).max(100);
+    const input = z
+      .object({
+        productId: id,
+        unansweredOnly: z.boolean(),
+        targets: z
+          .array(
+            z.object({ conversationId: id, expectedMessageId: id.nullable() }),
+          )
+          .min(1)
+          .max(MAX_COURSE_REPLY_BATCH),
+      })
+      .refine(
+        ({ targets, unansweredOnly }) =>
+          (targets.length === 1 || unansweredOnly) &&
+          new Set(targets.map(({ conversationId }) => conversationId)).size ===
+            targets.length,
+        "Elegí conversaciones distintas. El envío en lote requiere chats sin respuesta.",
+      )
+      .parse(req.body);
+    return sales.startCourseReplies(workspaceId, input);
+  });
   app.get("/api/conversations/:id", async (req) => {
     const workspaceId = await scope(req);
-    return db.conversation.findUniqueOrThrow({
+    const chat = await db.conversation.findUniqueOrThrow({
       where: { workspaceId_id: { workspaceId, id: idParam(req) } },
       include: {
         product: true,
-        messages: { orderBy: { createdAt: "asc" }, take: 500 },
+        messages: {
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          take: 500,
+        },
         payments: true,
       },
     });
+    return { ...chat, messages: chat.messages.reverse() };
   });
   app.post("/api/conversations/:id/human", async (req) => {
     const workspaceId = await scope(req, true);
