@@ -532,6 +532,10 @@ test("casual and off-topic replies return naturally to the selected product with
   c = await chat(start.conversationId);
   assert.match(c.messages.at(-1).text, /Preferís que te cuente/);
   assert.notEqual(c.messages.at(-1).text, c.messages.at(-3).text);
+  await incoming("natural", "sigo con la misma duda");
+  c = await chat(start.conversationId);
+  assert.equal(c.humanControlled, true);
+  assert.match(c.messages.at(-1).text, /persona del equipo/);
 });
 
 test("generic interest after a previous chat does not select an unrelated approved answer", async () => {
@@ -554,6 +558,102 @@ test("natural purchase phrases leave the conversation loop and show payment deta
     assert.match(c.messages.at(-1).text, /Alias:/);
     assert.doesNotMatch(c.messages.at(-1).text, /Preferís que te cuente/);
   }
+});
+
+test("the agent handles colloquial choices and sample requests in an existing sales conversation", async () => {
+  const created = await request("POST", "/api/products", {
+    name: "Planificación de prueba",
+    activationKeyword: "CALENDARIO FIXTURE",
+    priceCents: 350000,
+    mode: "FLEXIBLE",
+    firstMessage:
+      "Tenemos calendarios y agendas. Respondeme QUIERO y te explico cómo llevarlos.",
+  });
+  assert.equal(created.statusCode, 200, created.body);
+  const courseId = created.json().id;
+  const packs = await request("PUT", `/api/products/${courseId}/packs`, [
+    {
+      number: 1,
+      name: "Calendarios 2031",
+      priceCents: 350000,
+      summary: "Calendarios imprimibles",
+      deliveryMessage: "Entrega calendarios",
+    },
+    {
+      number: 2,
+      name: "Agendas 2031",
+      priceCents: 650000,
+      summary: "Agendas semanales",
+      deliveryMessage: "Entrega agendas",
+    },
+  ]);
+  assert.equal(packs.statusCode, 200, packs.body);
+  const start = (suffix: string) =>
+    incoming(`sales-intent-${suffix}`, "CALENDARIO FIXTURE");
+  const say = (suffix: string, text: string) =>
+    incoming(`sales-intent-${suffix}`, text);
+
+  const named = await start("name");
+  await say("name", "calendario completo");
+  let c = await chat(named.conversationId);
+  assert.match(c.messages.at(-1).text, /Pack 1.*3\.500.*Querés llevarlo/);
+  assert.equal(c.selectedPackNumber, null);
+  await say("name", "SSSSIIII");
+  c = await chat(named.conversationId);
+  assert.equal(c.selectedPackNumber, 1);
+  assert.equal(c.quotedPriceCents, 350000);
+
+  const choice = await start("number");
+  await say("number", "quioero");
+  c = await chat(choice.conversationId);
+  assert.match(c.messages.at(-1).text, /Cuál pack querés llevar/);
+  assert.equal(c.quotedPriceCents, null);
+  await say("number", "Quiero");
+  c = await chat(choice.conversationId);
+  assert.match(c.messages.at(-1).text, /número del pack/);
+  await say("number", "Si me interesa saber cómo ? ...número 1");
+  c = await chat(choice.conversationId);
+  assert.equal(c.selectedPackNumber, 1);
+  assert.equal(c.quotedPriceCents, 350000);
+
+  const both = await start("both");
+  await say("both", "quiero ambos");
+  c = await chat(both.conversationId);
+  assert.equal(c.humanControlled, true);
+  assert.equal(c.quotedPriceCents, null);
+  assert.match(
+    c.messages.at(-1).text,
+    /Calendarios 2031.*3\.500.*Agendas 2031.*6\.500/,
+  );
+  assert.doesNotMatch(c.messages.at(-1).text, /Alias:/);
+
+  const sample = await start("sample");
+  await say("sample", "Tenés videos para ver cómo son?");
+  c = await chat(sample.conversationId);
+  assert.match(c.messages.at(-1).text, /una muestra/);
+  assert.doesNotMatch(c.messages.at(-1).text, /Cuál elegís/);
+  await say("sample", "Ok");
+  c = await chat(sample.conversationId);
+  assert.equal(c.humanControlled, true);
+  assert.match(c.messages.at(-1).text, /equipo.*muestra/);
+  assert.equal(c.quotedPriceCents, null);
+
+  await db.replyRule.create({
+    data: {
+      workspaceId,
+      productId: courseId,
+      question: "¿Hay algún video de muestra?",
+      answer: "Mirá la muestra en https://example.test/muestra",
+    },
+  });
+  const approved = await start("approved-sample");
+  await say("approved-sample", "Tenés video para ver algo de los modelos?");
+  c = await chat(approved.conversationId);
+  assert.equal(
+    c.messages.at(-1).text,
+    "Mirá la muestra en https://example.test/muestra",
+  );
+  assert.equal(c.humanControlled, false);
 });
 test("a selected pack keeps its own price and delivery message through manual payment approval", async () => {
   const created = await request("POST", "/api/products", {

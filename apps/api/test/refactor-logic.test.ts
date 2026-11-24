@@ -113,6 +113,13 @@ test("combined packs require explicit inclusion and preserve the selected price"
     ).selected,
     undefined,
   );
+  assert.equal(
+    resolveRequestedPacks(
+      [lower, { ...higher, summary: "No incluye el Pack 1" }],
+      [1, 2],
+    ).selected,
+    undefined,
+  );
   assert.equal(resolveRequestedPacks(packs, [9]).validPacks, null);
   assert.deepEqual(resolveRequestedPacks(packs, null), {
     validPacks: null,

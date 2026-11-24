@@ -1,9 +1,9 @@
-import { normalize, money } from "../seller/text.js";
+import { normalizeSalesText, money } from "../seller/text.js";
 import { formatPackChoices } from "./messages.js";
 
 export function isShortConfirmation(text: string) {
   return /^(?:(?:si|sisi|dale|ok|okay|bueno|perfecto|listo|de acuerdo)(?: |$))+(?:gracias)?$/.test(
-    normalize(text),
+    normalizeSalesText(text),
   );
 }
 

@@ -6,12 +6,23 @@ import {
   normalize,
   OpenAISelector,
   purchaseIntent,
+  type AnswerFallback,
   type PackIntent,
 } from "../seller.js";
 import { saveAsset } from "../storage.js";
 import { HttpError, sha256 } from "../security.js";
-import { findExactRule } from "../seller/text.js";
-import { packChoice, resolveRequestedPacks } from "./selection.js";
+import {
+  asksForSample,
+  findExactRule,
+  isBarePurchaseRequest,
+  normalizeSalesText,
+} from "../seller/text.js";
+import {
+  namedPackIntent,
+  packChoice,
+  resolveRequestedPacks,
+  wantsBothPacks,
+} from "./selection.js";
 import { formatPackChoices } from "./messages.js";
 import { resolveCourseScope } from "./course-scope.js";
 import {
@@ -97,13 +108,13 @@ export async function receiveMessage(
         assetId: asset?.id,
       },
     });
-    const respond = (text: string, imageId?: string | null) =>
+    const respond = (text: string, imageId?: string | null, key = "reply") =>
       context.outgoing(
         tx,
         workspaceId,
         conversation.id,
         text,
-        `reply:${eventKey}`,
+        `${key}:${eventKey}`,
         undefined,
         "AUTO",
         imageId,
@@ -445,25 +456,64 @@ export async function receiveMessage(
       await respond(exact.answer, exact.imageId);
       return { conversationId: conversation.id };
     }
-    let confirmedPack: number | undefined;
-    if (isShortConfirmation(input.text)) {
-      const last = await tx.message.findFirst({
+    const history = (
+      await tx.message.findMany({
         where: {
           workspaceId,
           conversationId: conversation.id,
-          direction: "OUT",
-          status: { in: ["SENT", "PENDING"] },
+          externalId: { not: eventKey },
+          OR: [
+            { direction: "IN" },
+            {
+              direction: "OUT",
+              status: { in: ["SENT", "PENDING"] },
+              origin: { not: "EXTERNAL_AUTO" },
+            },
+          ],
         },
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-        select: { origin: true, text: true, externalId: true },
+        take: 12,
+        select: { direction: true, text: true, origin: true, externalId: true },
+      })
+    ).reverse();
+    const recentReplies = history
+      .filter((message) => message.direction === "OUT")
+      .slice(-2);
+    const last = recentReplies.at(-1) ?? null;
+    const textForSales = normalizeSalesText(input.text);
+    const sample = asksForSample(input.text);
+    const barePurchase = isBarePurchaseRequest(textForSales);
+    const shortYes = isShortConfirmation(input.text);
+    const wantsToBuy = !sample && purchaseIntent(textForSales);
+    const passToTeam = async (reason: string, reply: string) => {
+      await takeHumanControl(tx, workspaceId, conversation);
+      await tx.notification.create({
+        data: { workspaceId, text: `${input.contact} · ${reason}` },
       });
+      await handoff(reply);
+      return { conversationId: conversation.id };
+    };
+    if (
+      (shortYes || barePurchase) &&
+      last?.externalId?.startsWith("sample-offer:")
+    ) {
+      return passToTeam(
+        `Pide una muestra de ${product.name}.`,
+        "Perfecto, le paso tu consulta al equipo para que te comparta una muestra si está disponible.",
+      );
+    }
+    let confirmedPack: number | undefined;
+    if (shortYes || barePurchase) {
+      const waitingForNumber = /^confirmation-(?:options|clarify):/.test(
+        last?.externalId ?? "",
+      );
       const confirmation = resolveConfirmation(
         conversation,
         product.packs,
         product.currency,
         last,
       );
-      if (confirmation.kind === "reply") {
+      if ((shortYes || waitingForNumber) && confirmation.kind === "reply") {
         await context.outgoing(
           tx,
           workspaceId,
@@ -473,38 +523,65 @@ export async function receiveMessage(
         );
         return { conversationId: conversation.id };
       }
-      if (confirmation.kind === "wait")
+      if ((shortYes || waitingForNumber) && confirmation.kind === "wait")
         return { conversationId: conversation.id };
       if (confirmation.kind === "choose") confirmedPack = confirmation.number;
     }
-    if (product.packs.length) {
+    if (product.packs.length && !sample) {
+      const both = wantsBothPacks(textForSales, last?.text ?? "");
       let requestedNumbers =
-        confirmedPack === undefined ? packChoice(query) : [confirmedPack];
-      let interpreted: PackIntent | null = null;
-      if (!requestedNumbers && selector?.classifyPack && input.text.trim()) {
-        const recent = await tx.message.findMany({
-          where: { workspaceId, conversationId: conversation.id },
-          orderBy: { createdAt: "desc" },
-          take: 7,
-          select: { direction: true, text: true },
-        });
+        confirmedPack === undefined
+          ? packChoice(textForSales)
+          : [confirmedPack];
+      if (
+        !requestedNumbers &&
+        ((both && product.packs.length === 2) ||
+          (barePurchase && product.packs.length === 1))
+      ) {
+        requestedNumbers = product.packs.map((pack) => pack.number);
+      }
+      let interpreted: PackIntent | undefined = requestedNumbers
+        ? undefined
+        : namedPackIntent(textForSales, product.packs, last?.text ?? "");
+      if (
+        !requestedNumbers &&
+        !interpreted &&
+        !barePurchase &&
+        selector?.classifyPack &&
+        textForSales
+      ) {
         try {
           const result = await selector.classifyPack(
-            input.text,
+            textForSales === query ? input.text : textForSales,
             product.packs,
-            recent.reverse(),
+            history,
             conversation.selectedPackNumber,
             product.currency,
           );
-          const validNumbers = [...new Set(result.packNumbers)].filter(
-            (number) => product.packs.some((pack) => pack.number === number),
-          );
-          interpreted = { intent: result.intent, packNumbers: validNumbers };
-          if (result.intent === "choose" && validNumbers.length)
-            requestedNumbers = validNumbers;
+          const numbers = [...new Set(result.packNumbers)];
+          if (
+            numbers.every((number) =>
+              product.packs.some((pack) => pack.number === number),
+            )
+          ) {
+            interpreted = { intent: result.intent, packNumbers: numbers };
+          }
         } catch {
           // An unavailable model cannot create a quote or payment request.
         }
+      }
+      if (
+        interpreted?.intent === "choose" &&
+        interpreted.packNumbers.length &&
+        (!both || interpreted.packNumbers.length === 2)
+      ) {
+        requestedNumbers = interpreted.packNumbers;
+      }
+      if (both && !requestedNumbers) {
+        await respond(
+          `¿Cuáles dos te gustaría llevar? Pasame sus números entre ${formatPackChoices(product.packs, product.currency)}.`,
+        );
+        return { conversationId: conversation.id };
       }
       const { validPacks, selected } = resolveRequestedPacks(
         product.packs,
@@ -538,10 +615,14 @@ export async function receiveMessage(
         return { conversationId: conversation.id };
       }
       if (requestedNumbers?.length && !selected) {
+        if (validPacks && validPacks.length > 1) {
+          return passToTeam(
+            `Quiere llevar ${validPacks.map((pack) => pack.name).join(" y ")} de ${product.name}.`,
+            `Entendido, querés llevar ${validPacks.map((pack) => `${pack.name} (${money(pack.priceCents, product.currency)})`).join(" y ")}. Te paso con el equipo para coordinar la compra en conjunto.`,
+          );
+        }
         await respond(
-          validPacks?.length && validPacks.length > 1
-            ? `No tengo un precio conjunto configurado para esos packs. ¿Cuál elegís: ${validPacks.map((pack) => `${pack.number} (${pack.name})`).join(" o ")}?`
-            : `No encuentro ese pack. Elegí ${product.packs.map((pack) => pack.number).join(", ")}.`,
+          `No encuentro ese pack. Elegí ${product.packs.map((pack) => pack.number).join(", ")}.`,
         );
         return { conversationId: conversation.id };
       }
@@ -590,7 +671,7 @@ export async function receiveMessage(
         );
         return { conversationId: conversation.id };
       }
-      if (!conversation.selectedPackNumber && purchaseIntent(query)) {
+      if (!conversation.selectedPackNumber && wantsToBuy) {
         if (!paymentsEnabled) {
           await tx.conversation.update({
             where: { id: conversation.id },
@@ -603,6 +684,8 @@ export async function receiveMessage(
         }
         await respond(
           `¿Cuál pack querés llevar? Respondé ${formatPackChoices(product.packs, product.currency, true)}.`,
+          undefined,
+          "confirmation-options",
         );
         return { conversationId: conversation.id };
       }
@@ -615,7 +698,7 @@ export async function receiveMessage(
         return { conversationId: conversation.id };
       }
     }
-    if (purchaseIntent(query)) {
+    if (wantsToBuy) {
       if (!paymentsEnabled) {
         await tx.conversation.update({
           where: { id: conversation.id },
@@ -648,32 +731,61 @@ export async function receiveMessage(
         product.remarketingEnabled,
       );
     } else {
-      const history = await tx.message.findMany({
-        where: { workspaceId, conversationId: conversation.id },
-        orderBy: { createdAt: "desc" },
-        take: 12,
-      });
-      let ruleIds: string[] = [];
+      const reply: { ruleIds: string[]; fallback?: AnswerFallback } = {
+        ruleIds: [],
+      };
       const text = await answer(
         conversation.selectedPackNumber &&
           conversation.quotedPriceCents !== null
           ? { ...product, priceCents: conversation.quotedPriceCents }
           : product,
         input.text,
-        history.reverse(),
+        history,
         selector,
         (ids) => {
-          ruleIds = ids;
+          reply.ruleIds = ids;
+        },
+        (kind) => {
+          reply.fallback = kind;
         },
       );
+      if (
+        reply.fallback === "sample" &&
+        last?.externalId?.startsWith("sample-offer:")
+      ) {
+        return passToTeam(
+          `Volvió a pedir una muestra de ${product.name}.`,
+          "Te derivo con el equipo para que pueda mostrarte los modelos si hay una muestra disponible.",
+        );
+      }
+      if (
+        reply.fallback === "general" &&
+        recentReplies.length === 2 &&
+        recentReplies.every((message) =>
+          message.externalId?.startsWith("clarification:"),
+        )
+      ) {
+        return passToTeam(
+          `El asistente no pudo resolver la consulta sobre ${product.name}.`,
+          "Te paso con una persona del equipo para que pueda ayudarte con tu consulta.",
+        );
+      }
       const imageIds = [
         ...new Set(
-          ruleIds
+          reply.ruleIds
             .map((id) => product.rules.find((rule) => rule.id === id)?.imageId)
             .filter((id): id is string => !!id),
         ),
       ];
-      await respond(text, imageIds[0]);
+      await respond(
+        text,
+        imageIds[0],
+        reply.fallback === "sample"
+          ? "sample-offer"
+          : reply.fallback === "general"
+            ? "clarification"
+            : "reply",
+      );
       for (const [index, imageId] of imageIds.slice(1).entries()) {
         await context.outgoing(
           tx,
